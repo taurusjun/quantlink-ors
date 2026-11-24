@@ -87,7 +87,7 @@ std::string formatLevels(const Prices& prices, const Quantities& qtys) {
 
 int loginSmoke(const CtpConfig& config) {
   ors::ctp::CtpTraderSession session(config);
-  if (!session.start()) {
+  if (!session.start(std::chrono::seconds(60))) {
     std::cerr << "FAILED: " << session.lastError() << '\n';
     return 1;
   }
@@ -157,7 +157,7 @@ struct SnapshotPrinter final : ors::ctp::SnapshotSink {
 
 int querySmoke(const CtpConfig& config) {
   ors::ctp::CtpTraderSession session(config);
-  if (!session.start()) {
+  if (!session.start(std::chrono::seconds(60))) {
     std::cerr << "FAILED: " << session.lastError() << '\n';
     return 1;
   }
@@ -194,7 +194,7 @@ int querySmoke(const CtpConfig& config) {
 
 int mdSmoke(const CtpConfig& config, const std::vector<std::string>& instruments) {
   ors::ctp::CtpMdSession session(config);
-  if (!session.start()) {
+  if (!session.start(std::chrono::seconds(60))) {
     std::cerr << "FAILED: " << session.lastError() << '\n';
     return 1;
   }
@@ -273,6 +273,11 @@ struct ExecutionPrinter final : ExecutionSink {
   bool waitForCancelOutcome(std::chrono::milliseconds timeout) {
     std::unique_lock<std::mutex> lock(mutex);
     return cv.wait_for(lock, timeout, [this] { return cancelOutcome; });
+  }
+
+  bool waitForTrade(std::chrono::milliseconds timeout) {
+    std::unique_lock<std::mutex> lock(mutex);
+    return cv.wait_for(lock, timeout, [this] { return tradeCount > 0; });
   }
 
   bool isTerminal() const {
@@ -386,7 +391,7 @@ int orderSmoke(const std::string& configPath, const std::vector<std::string>& in
   std::cout << "config: " << config.summary() << '\n';
 
   CtpTraderSession session(config);
-  if (!session.start()) {
+  if (!session.start(std::chrono::seconds(60))) {
     std::cerr << "FAILED: " << session.lastError() << '\n';
     return 1;
   }
@@ -412,7 +417,13 @@ int orderSmoke(const std::string& configPath, const std::vector<std::string>& in
   }
   if (printer.isTerminal()) {
     const OrderStatus status = printer.lastStatus();
+    if (status == OrderStatus::Filled && printer.trades() == 0) {
+      printer.waitForTrade(std::chrono::seconds(2));
+    }
     std::cout << "order is terminal (" << toString(status) << "); cancel skipped\n";
+    std::cout << "RESULT updates=" << printer.updateCount() << " trades=" << printer.trades()
+              << " lastStatus=" << toString(printer.lastStatus())
+              << " cancelState=" << toString(printer.lastCancelState()) << '\n';
     return status == OrderStatus::Rejected ? 1 : 0;
   }
 
@@ -430,6 +441,9 @@ int orderSmoke(const std::string& configPath, const std::vector<std::string>& in
   if (!printer.waitForCancelOutcome(std::chrono::seconds(10))) {
     std::cerr << "FAILED: no cancel result or trade within 10s after the cancel\n";
     return 1;
+  }
+  if (printer.lastStatus() == OrderStatus::Filled && printer.trades() == 0) {
+    printer.waitForTrade(std::chrono::seconds(2));
   }
   std::cout << "RESULT updates=" << printer.updateCount() << " trades=" << printer.trades()
             << " lastStatus=" << toString(printer.lastStatus())
