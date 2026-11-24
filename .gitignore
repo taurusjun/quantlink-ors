@@ -1,0 +1,17 @@
+build/
+cmake-build-*/
+.idea/
+.vscode/
+*.cmake.user
+
+third_party/ctp/
+*.so
+*.so.*
+*.a
+*.dylib
+
+state/
+logs/
+*.local.cfg
+*.secret
+.env
