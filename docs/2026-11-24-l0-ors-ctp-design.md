@@ -283,7 +283,16 @@ exchange     string
 5. 重连后按 OrderRef/FrontID/SessionID 查询对账
 ```
 
-CTP 没有原子改单：
+CTP 头文件里有 `THOST_FTDC_AF_Modify` 常量，但当前 CTP API 文档明确：
+
+```text
+ReqOrderAction.ActionFlag 只支持 THOST_FTDC_AF_Delete
+不支持 Modify
+```
+
+参考：CTP 6.7.11 `ReqOrderAction` / `OnErrRtnOrderAction` 文档；146 的 China ORS 也只使用 `THOST_FTDC_AF_Delete`，没有改单实现。
+
+因此：
 
 ```text
 ModifyRequest -> REJECTED，reason="modify unsupported by CTP"
