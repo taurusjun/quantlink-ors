@@ -1,6 +1,8 @@
 #pragma once
 
+#include <array>
 #include <chrono>
+#include <cstddef>
 #include <memory>
 #include <string>
 #include <vector>
@@ -31,6 +33,50 @@ struct Instrument {
   double priceTick{0.0};
 };
 
+/// CTP publishes five depth levels; the L0 contract carries twenty.
+inline constexpr std::size_t kCtpDepthLevels = 5;
+inline constexpr std::size_t kMarketDepthLevels = 20;
+
+/**
+ * The depth fields of a CTP tick, free of SDK types so the contract mapping
+ * can be unit-tested.
+ */
+struct DepthTick {
+  std::string instrumentId;
+  std::string exchangeId;
+  double lastPrice{0.0};
+  int lastVolume{0};
+  double turnover{0.0};
+  double openInterest{0.0};
+  std::string updateTime;
+  int updateMillisec{0};
+  std::array<double, kCtpDepthLevels> bidPrices{};
+  std::array<int, kCtpDepthLevels> bidQtys{};
+  std::array<double, kCtpDepthLevels> askPrices{};
+  std::array<int, kCtpDepthLevels> askQtys{};
+};
+
+struct MarketData {
+  std::string instrumentId;
+  std::string exchange;
+  double lastPrice{0.0};
+  long long volume{0};
+  double turnover{0.0};
+  double openInterest{0.0};
+  std::string updateTime;
+  int updateMillisec{0};
+  std::array<double, kMarketDepthLevels> bidPrices{};
+  std::array<int, kMarketDepthLevels> bidQtys{};
+  std::array<double, kMarketDepthLevels> askPrices{};
+  std::array<int, kMarketDepthLevels> askQtys{};
+};
+
+/**
+ * Copies the five CTP levels and leaves levels 6..20 at zero. A level CTP
+ * never published stays absent instead of repeating a price that is not there.
+ */
+MarketData mapDepthMarketData(const DepthTick& tick);
+
 /**
  * One TraderApi session for one CTP account.
  *
@@ -57,6 +103,41 @@ class CtpTraderSession {
   bool queryInstruments();
 
   std::vector<Instrument> instruments() const;
+
+ private:
+  struct Impl;
+  std::unique_ptr<Impl> impl_;
+};
+
+/**
+ * One MdApi session for the same CTP account.
+ *
+ * start() drives DISCONNECTED -> CONNECTING -> LOGGING_IN -> READY and blocks
+ * until READY, FAILED, or the timeout expires. Ticks are mapped with
+ * mapDepthMarketData(); waitForMarketData() lets a smoke run block for the
+ * first one.
+ */
+class CtpMdSession {
+ public:
+  explicit CtpMdSession(CtpConfig config);
+  ~CtpMdSession();
+
+  CtpMdSession(const CtpMdSession&) = delete;
+  CtpMdSession& operator=(const CtpMdSession&) = delete;
+
+  bool start(std::chrono::milliseconds timeout = std::chrono::seconds(30));
+  SessionState state() const;
+  std::string lastError() const;
+
+  /// Sends SubscribeMarketData when READY; called earlier the list is sent
+  /// right after login. Returns false when the request cannot be sent.
+  bool subscribe(const std::vector<std::string>& instruments);
+
+  /// Blocks until the first tick arrives; false on timeout.
+  bool waitForMarketData(std::chrono::milliseconds timeout);
+
+  MarketData lastMarketData() const;
+  std::size_t marketDataCount() const;
 
  private:
   struct Impl;
