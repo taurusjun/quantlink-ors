@@ -1,4 +1,5 @@
 #include "ors/ctp/CtpSession.h"
+#include "ors/ctp/PriceSanitize.h"
 
 #include <ThostFtdcMdApi.h>
 
@@ -42,12 +43,6 @@ std::string flowPathWithSlash(const std::string& path) {
   return path;
 }
 
-// CTP fills depth levels that do not exist with DBL_MAX. The contract means
-// "absent" by 0, so a sentinel never reaches a consumer as a price.
-double realPrice(double raw) {
-  return std::isfinite(raw) && std::fabs(raw) < 1e300 ? raw : 0.0;
-}
-
 DepthTick toDepthTick(const CThostFtdcDepthMarketDataField& row) {
   DepthTick tick;
   tick.instrumentId = row.InstrumentID;
@@ -75,16 +70,16 @@ MarketData mapDepthMarketData(const DepthTick& tick) {
   MarketData md;
   md.instrumentId = tick.instrumentId;
   md.exchange = tick.exchangeId;
-  md.lastPrice = realPrice(tick.lastPrice);
+  md.lastPrice = sanitizePrice(tick.lastPrice);
   md.volume = tick.lastVolume;
-  md.turnover = tick.turnover;
-  md.openInterest = tick.openInterest;
+  md.turnover = sanitizeMoney(tick.turnover);
+  md.openInterest = sanitizeMoney(tick.openInterest);
   md.updateTime = tick.updateTime;
   md.updateMillisec = tick.updateMillisec;
   for (std::size_t level = 0; level < kCtpDepthLevels; ++level) {
-    md.bidPrices[level] = realPrice(tick.bidPrices[level]);
+    md.bidPrices[level] = sanitizePrice(tick.bidPrices[level]);
     md.bidQtys[level] = tick.bidQtys[level];
-    md.askPrices[level] = realPrice(tick.askPrices[level]);
+    md.askPrices[level] = sanitizePrice(tick.askPrices[level]);
     md.askQtys[level] = tick.askQtys[level];
   }
   // Levels 6..20 keep the zero-initialised values: CTP has five levels, and

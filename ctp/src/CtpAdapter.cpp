@@ -1,4 +1,5 @@
 #include "ors/ctp/CtpAdapter.h"
+#include "ors/ctp/PriceSanitize.h"
 
 #include <ThostFtdcTraderApi.h>
 
@@ -28,14 +29,6 @@ std::string text(const char (&field)[N]) {
     ++length;
   }
   return std::string(field, length);
-}
-
-/// CTP marks a missing price with DBL_MAX; the contract means "absent" by zero.
-double money(double value) {
-  if (!std::isfinite(value) || std::fabs(value) >= std::numeric_limits<double>::max()) {
-    return 0.0;
-  }
-  return value;
 }
 
 std::uint64_t epochMillis() {
@@ -325,7 +318,7 @@ struct CtpAdapter::Impl {
     update.side = mapSide(order->Direction);
     update.offsetFlag = mapOffset(order->CombOffsetFlag[0]);
     update.orderQty = order->VolumeTotalOriginal;
-    update.price = money(order->LimitPrice);
+    update.price = sanitizePrice(order->LimitPrice);
     update.exchange = text(order->ExchangeID);
     update.reason = text(info->ErrorMsg);
     update.errorCode = info->ErrorID;
@@ -388,7 +381,7 @@ struct CtpAdapter::Impl {
       update.orderQty = order->VolumeTotalOriginal;
       update.filledQty = order->VolumeTraded;
       update.remainingQty = order->VolumeTotal;
-      update.price = money(order->LimitPrice);
+      update.price = sanitizePrice(order->LimitPrice);
       update.reason = text(order->StatusMsg);
       update.tradingDay = text(order->TradingDay);
       bufferUpdate(update);
@@ -404,7 +397,7 @@ struct CtpAdapter::Impl {
     const int volumeTraded = order->VolumeTraded;
     const int volumeTotal = order->VolumeTotal;
     const int volumeOriginal = order->VolumeTotalOriginal;
-    const double limitPrice = money(order->LimitPrice);
+    const double limitPrice = sanitizePrice(order->LimitPrice);
     OrderState state;
     OrderStatus status = mapOrderStatus(order->OrderStatus);
     CancelState cancelState = CancelState::None;
@@ -472,7 +465,7 @@ struct CtpAdapter::Impl {
     report.exchange = text(trade->ExchangeID);
     report.side = mapSide(trade->Direction);
     report.offsetFlag = mapOffset(trade->OffsetFlag);
-    report.price = money(trade->Price);
+    report.price = sanitizePrice(trade->Price);
     report.qty = trade->Volume;
     report.tradingDay = text(trade->TradingDay);
     if (orderRef == 0) {

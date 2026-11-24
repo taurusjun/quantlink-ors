@@ -1,4 +1,5 @@
 #include "ors/ctp/CtpQueryService.h"
+#include "ors/ctp/PriceSanitize.h"
 
 #include <ThostFtdcTraderApi.h>
 
@@ -33,15 +34,6 @@ std::string text(const char (&field)[N]) {
   return std::string(field, length);
 }
 
-/// CTP marks a missing value with DBL_MAX and can leak NaN/infinity; the
-/// contract means "absent" by zero.
-double money(double value) {
-  if (!std::isfinite(value) || std::fabs(value) >= std::numeric_limits<double>::max()) {
-    return 0.0;
-  }
-  return value;
-}
-
 std::uint64_t epochMillis() {
   const auto elapsed = std::chrono::system_clock::now().time_since_epoch();
   return static_cast<std::uint64_t>(
@@ -63,15 +55,15 @@ AccountSnapshot mapAccountSnapshot(const CThostFtdcTradingAccountField& row,
                                    const SnapshotHeader& header) {
   AccountSnapshot snapshot;
   snapshot.header = header;
-  snapshot.balance = money(row.Balance);
-  snapshot.available = money(row.Available);
-  snapshot.margin = money(row.CurrMargin);
-  snapshot.frozenMargin = money(row.FrozenMargin);
-  snapshot.commission = money(row.Commission);
-  snapshot.closeProfit = money(row.CloseProfit);
-  snapshot.positionProfit = money(row.PositionProfit);
-  snapshot.deposit = money(row.Deposit);
-  snapshot.withdraw = money(row.Withdraw);
+  snapshot.balance = sanitizeMoney(row.Balance);
+  snapshot.available = sanitizeMoney(row.Available);
+  snapshot.margin = sanitizeMoney(row.CurrMargin);
+  snapshot.frozenMargin = sanitizeMoney(row.FrozenMargin);
+  snapshot.commission = sanitizeMoney(row.Commission);
+  snapshot.closeProfit = sanitizeMoney(row.CloseProfit);
+  snapshot.positionProfit = sanitizeMoney(row.PositionProfit);
+  snapshot.deposit = sanitizeMoney(row.Deposit);
+  snapshot.withdraw = sanitizeMoney(row.Withdraw);
   return snapshot;
 }
 
@@ -85,11 +77,11 @@ PositionSnapshot mapPositionSnapshot(const CThostFtdcInvestorPositionField& row,
   const int position = row.Position;
   const int today = row.TodayPosition;
   const int yesterday = row.YdPosition != 0 ? row.YdPosition : position - today;
-  const double cost = money(row.PositionCost);
+  const double cost = sanitizeMoney(row.PositionCost);
   const double avgPrice = position > 0 && volumeMultiple > 0
                               ? cost / (static_cast<double>(position) * volumeMultiple)
                               : 0.0;
-  snapshot.settlementPrice = money(row.SettlementPrice);
+  snapshot.settlementPrice = sanitizePrice(row.SettlementPrice);
 
   // shortcut: some venues also report net positions (PosiDirection 'N'); SimNow
   // futures only report long and short, so a net row is counted as long until a
@@ -122,7 +114,7 @@ OrderSnapshot mapOrderSnapshot(const CThostFtdcOrderField& row,
   snapshot.volumeTraded = row.VolumeTraded;
   snapshot.volumeTotal = row.VolumeTotal;
   snapshot.volumeTotalOriginal = row.VolumeTotalOriginal;
-  snapshot.limitPrice = money(row.LimitPrice);
+  snapshot.limitPrice = sanitizePrice(row.LimitPrice);
   snapshot.frontId = row.FrontID;
   snapshot.sessionId = row.SessionID;
   return snapshot;
@@ -140,7 +132,7 @@ TradeSnapshot mapTradeSnapshot(const CThostFtdcTradeField& row,
   snapshot.direction = row.Direction;
   snapshot.offsetFlag = row.OffsetFlag;
   snapshot.volume = row.Volume;
-  snapshot.price = money(row.Price);
+  snapshot.price = sanitizePrice(row.Price);
   snapshot.tradeDate = text(row.TradeDate);
   snapshot.tradeTime = text(row.TradeTime);
   return snapshot;

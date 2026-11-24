@@ -40,6 +40,10 @@ add_executable(ctp_config_test tests/CtpConfigTest.cpp)
 target_link_libraries(ctp_config_test PRIVATE ors_ctp_config)
 add_test(NAME ctp_config COMMAND ctp_config_test)
 
+add_executable(ctp_price_sanitize_test tests/PriceSanitizeTest.cpp)
+target_include_directories(ctp_price_sanitize_test PRIVATE include)
+add_test(NAME ctp_price_sanitize COMMAND ctp_price_sanitize_test)
+
 # Only mapDepthMarketData() runs here: no login, no network.
 add_executable(ctp_md_test tests/CtpMdSessionTest.cpp)
 target_link_libraries(ctp_md_test PRIVATE ors_ctp_core)
