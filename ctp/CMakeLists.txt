@@ -5,7 +5,8 @@ add_library(ors_ctp_config STATIC src/CtpConfig.cpp)
 target_include_directories(ors_ctp_config PUBLIC include)
 
 add_library(ors_ctp_core STATIC src/CtpTraderSession.cpp src/CtpMdSession.cpp
-                                src/CtpQueryService.cpp)
+                                src/CtpQueryService.cpp src/CtpOrderRefMap.cpp
+                                src/CtpAdapter.cpp)
 target_include_directories(ors_ctp_core PUBLIC include)
 target_link_libraries(ors_ctp_core PUBLIC ors_ctp_config PRIVATE CTP::trader CTP::md)
 
@@ -43,3 +44,25 @@ set_tests_properties(ctp_md_mode_wired PROPERTIES
 add_test(NAME ctp_query_mode_wired COMMAND ors_ctp --mode query-smoke)
 set_tests_properties(ctp_query_mode_wired PROPERTIES
   PASS_REGULAR_EXPRESSION "--config is required for --mode query-smoke")
+
+# OrderRef limit, duplicate rejection and resolve; no login either.
+add_executable(ctp_order_ref_map_test tests/CtpOrderRefMapTest.cpp)
+target_link_libraries(ctp_order_ref_map_test PRIVATE ors_ctp_core)
+add_test(NAME ctp_order_ref_map COMMAND ctp_order_ref_map_test)
+
+# Insert/cancel mapping and execution reports against a fake sender. The test
+# builds real CTP rows, so it needs the SDK include path that CTP::trader adds.
+add_executable(ctp_adapter_test tests/CtpAdapterTest.cpp)
+target_link_libraries(ctp_adapter_test PRIVATE ors_ctp_core CTP::trader)
+add_test(NAME ctp_adapter COMMAND ctp_adapter_test)
+
+# order-smoke is dry-run unless --live, so ctest can reach the mode without a
+# config, a login or an order.
+add_test(NAME ctp_order_mode_wired COMMAND ors_ctp --mode order-smoke --instruments au2612
+                                           --price 500 --qty 1)
+set_tests_properties(ctp_order_mode_wired PROPERTIES PASS_REGULAR_EXPRESSION "DRY-RUN")
+
+add_test(NAME ctp_order_mode_requires_config COMMAND ors_ctp --mode order-smoke --live
+                                                   --instruments au2612 --price 500 --qty 1)
+set_tests_properties(ctp_order_mode_requires_config PROPERTIES
+  PASS_REGULAR_EXPRESSION "--config is required for --mode order-smoke")

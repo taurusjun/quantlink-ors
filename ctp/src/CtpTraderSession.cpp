@@ -177,6 +177,16 @@ struct CtpTraderSession::Impl {
     return querySpi_;
   }
 
+  void setOrderSpi(CThostFtdcTraderSpi* spi) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    orderSpi_ = spi;
+  }
+
+  CThostFtdcTraderSpi* orderSpi() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return orderSpi_;
+  }
+
   int volumeMultiple(const std::string& instrumentId) const {
     std::lock_guard<std::mutex> lock(mutex_);
     for (const auto& instrument : instruments_) {
@@ -463,6 +473,49 @@ struct CtpTraderSession::Impl {
       }
     }
 
+    // Order traffic belongs to the order SPI (CtpAdapter); the session keeps
+    // the single SPI CTP allows and forwards each callback with its full
+    // signature, so the adapter sees the same rows the API produced.
+    void OnRspOrderInsert(CThostFtdcInputOrderField* order, CThostFtdcRspInfoField* info,
+                          int requestId, bool isLast) override {
+      if (CThostFtdcTraderSpi* spi = owner_.orderSpi()) {
+        spi->OnRspOrderInsert(order, info, requestId, isLast);
+      }
+    }
+
+    void OnRspOrderAction(CThostFtdcInputOrderActionField* action,
+                          CThostFtdcRspInfoField* info, int requestId, bool isLast) override {
+      if (CThostFtdcTraderSpi* spi = owner_.orderSpi()) {
+        spi->OnRspOrderAction(action, info, requestId, isLast);
+      }
+    }
+
+    void OnErrRtnOrderInsert(CThostFtdcInputOrderField* order,
+                             CThostFtdcRspInfoField* info) override {
+      if (CThostFtdcTraderSpi* spi = owner_.orderSpi()) {
+        spi->OnErrRtnOrderInsert(order, info);
+      }
+    }
+
+    void OnErrRtnOrderAction(CThostFtdcOrderActionField* action,
+                             CThostFtdcRspInfoField* info) override {
+      if (CThostFtdcTraderSpi* spi = owner_.orderSpi()) {
+        spi->OnErrRtnOrderAction(action, info);
+      }
+    }
+
+    void OnRtnOrder(CThostFtdcOrderField* order) override {
+      if (CThostFtdcTraderSpi* spi = owner_.orderSpi()) {
+        spi->OnRtnOrder(order);
+      }
+    }
+
+    void OnRtnTrade(CThostFtdcTradeField* trade) override {
+      if (CThostFtdcTraderSpi* spi = owner_.orderSpi()) {
+        spi->OnRtnTrade(trade);
+      }
+    }
+
     Impl& owner_;
   };
 
@@ -477,6 +530,7 @@ struct CtpTraderSession::Impl {
   bool stopping_{false};
   CThostFtdcTraderApi* api_{nullptr};
   CThostFtdcTraderSpi* querySpi_{nullptr};
+  CThostFtdcTraderSpi* orderSpi_{nullptr};
   std::unique_ptr<TraderSpi> spi_;
 };
 
@@ -515,6 +569,10 @@ int CtpTraderSession::nextRequestId() {
 
 void CtpTraderSession::setQuerySpi(CThostFtdcTraderSpi* spi) {
   impl_->setQuerySpi(spi);
+}
+
+void CtpTraderSession::setOrderSpi(CThostFtdcTraderSpi* spi) {
+  impl_->setOrderSpi(spi);
 }
 
 int CtpTraderSession::volumeMultiple(const std::string& instrumentId) const {

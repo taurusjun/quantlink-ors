@@ -123,6 +123,11 @@ class CtpTraderSession {
   /// first; pass nullptr to detach.
   void setQuerySpi(CThostFtdcTraderSpi* spi);
 
+  /// The order-related callbacks (insert/action responses, OnRtnOrder,
+  /// OnRtnTrade and the OnErrRtn* pair) go to this SPI. Same lifetime rule as
+  /// setQuerySpi(); both slots may be filled at the same time.
+  void setOrderSpi(CThostFtdcTraderSpi* spi);
+
   /// Re-runs the instrument query; allowed after settlement confirm and when
   /// already READY. Returns false when the request cannot be sent.
   bool queryInstruments();
