@@ -12,6 +12,17 @@ L0 / ORS
 设计文档：
 
 - [L0 ORS CTP 对接方案](docs/2026-11-24-l0-ors-ctp-design.md)
+- [CTP/SimNow 验收记录（PARTIAL）](docs/2026-11-24-ctp-acceptance.md)
+
+Contract C++ SBE 生成：
+
+```bash
+SBE_JAR=/path/to/sbe-all-1.35.6.jar \
+CONTRACT_HOME=/path/to/quantlink-venue-contract \
+./tools/gen_contract_cpp.sh
+```
+
+生成物写到 `build/generated/contract/`，不提交。
 
 原则：
 
