@@ -1,7 +1,7 @@
 # L0 ORS CTP 对接方案
 
 - 日期：2026-11-24
-- 状态：DRAFT — 等待确认
+- 状态：APPROVED（2026-11-24）
 - 范围：`quantlink-ors` 新项目、`ctp` 子项目、SimNow 测试、与 L0 contract 的边界
 - 关联：`quantlink-venue-contract` 0.2.0、`quantlink-fasttrade/docs/v2/003-l0-ors-venue.md`
 
