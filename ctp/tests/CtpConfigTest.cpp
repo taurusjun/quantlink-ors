@@ -1,78 +1,163 @@
-// Configuration test: CMake must fail, with a message naming CTP_HOME, when the
-// CTP SDK is missing. Runs the configure step only; it never builds anything.
+// CtpConfig unit test: required keys, environment overrides for credentials,
+// and log safety. Uses only CtpConfig, so it links without the CTP SDK.
 
-#include <sys/wait.h>
-
-#include <cstdio>
 #include <filesystem>
+#include <fstream>
 #include <iostream>
+#include <map>
+#include <optional>
+#include <stdexcept>
 #include <string>
-#include <system_error>
+#include <string_view>
+
+#include "ors/ctp/CtpConfig.h"
 
 namespace {
 
-struct CommandResult {
-  int exitCode;
-  std::string output;
-};
+using ors::ctp::CtpConfig;
 
-CommandResult run(const std::string& command) {
-  CommandResult result{-1, {}};
-  FILE* pipe = ::popen(command.c_str(), "r");
-  if (pipe == nullptr) {
-    return result;
+int failures = 0;
+
+void check(bool condition, const std::string& what) {
+  if (!condition) {
+    std::cerr << "FAIL: " << what << '\n';
+    ++failures;
   }
-  char buffer[4096];
-  size_t read = 0;
-  while ((read = std::fread(buffer, 1, sizeof buffer, pipe)) > 0) {
-    result.output.append(buffer, read);
-  }
-  const int status = ::pclose(pipe);
-  if (WIFEXITED(status)) {
-    result.exitCode = WEXITSTATUS(status);
-  }
-  return result;
 }
 
-std::string quote(const std::string& value) {
-  return "\"" + value + "\"";
+std::string writeConfig(const std::filesystem::path& path, const std::string& contents) {
+  std::ofstream out(path, std::ios::trunc);
+  out << contents;
+  out.close();
+  return path.string();
 }
 
-// Configures the project into a scratch build dir and reports whether it failed
-// while naming CTP_HOME in the error output.
-bool configFailsNamingCtpHome(const std::string& name, const std::string& envPrefix,
-                              const std::string& extraArgs) {
-  const std::filesystem::path buildDir = std::filesystem::path{ORS_TEST_BUILD_DIR} / name;
-  std::error_code ignored;
-  std::filesystem::remove_all(buildDir, ignored);
+CtpConfig::Env envFrom(std::map<std::string, std::string> values) {
+  return [values](std::string_view name) -> std::optional<std::string> {
+    const auto found = values.find(std::string(name));
+    if (found == values.end()) {
+      return std::nullopt;
+    }
+    return found->second;
+  };
+}
 
-  const std::string command = envPrefix + quote(ORS_CTP_CMAKE_COMMAND) +
-                              " -S " + quote(ORS_SOURCE_DIR) + " -B " + quote(buildDir.string()) +
-                              " " + extraArgs + " 2>&1";
-  const CommandResult result = run(command);
-
-  if (result.exitCode == 0) {
-    std::cerr << name << ": configure unexpectedly succeeded\n" << result.output << '\n';
-    return false;
+template <typename Callable>
+bool throwsContaining(Callable callable, const std::string& needle) {
+  try {
+    callable();
+  } catch (const std::runtime_error& error) {
+    return std::string(error.what()).find(needle) != std::string::npos;
   }
-  if (result.output.find("CTP_HOME") == std::string::npos) {
-    std::cerr << name << ": configure failed without naming CTP_HOME\n" << result.output << '\n';
-    return false;
-  }
-  return true;
+  return false;
 }
 
 }  // namespace
 
 int main() {
-  // No CTP_HOME at all, and CTP_HOME pointing at a directory without the SDK.
-  const bool unsetPassed = configFailsNamingCtpHome("no_ctp_home", "env -u CTP_HOME ", "");
-  const bool missingPassed =
-      configFailsNamingCtpHome("bad_ctp_home", "env -u CTP_HOME ", "-DCTP_HOME=/nonexistent");
+  const std::filesystem::path dir =
+      std::filesystem::temp_directory_path() / "ors_ctp_config_test";
+  std::error_code ignored;
+  std::filesystem::remove_all(dir, ignored);
+  std::filesystem::create_directories(dir);
 
-  if (!unsetPassed || !missingPassed) {
+  const std::string full = writeConfig(dir / "full.cfg",
+                                       "BROKER_ID = 9999\n"
+                                       "INVESTOR_ID = 900001\n"
+                                       "PASSWORD = file-password\n"
+                                       "APP_ID = file-app\n"
+                                       "AUTH_CODE = file-auth\n"
+                                       "TRADE_FRONT = tcp://127.0.0.1:30001\n"
+                                       "MD_FRONT = tcp://127.0.0.1:30011\n"
+                                       "TRADER_FLOW_PATH = state/test/trader\n");
+
+  // Required keys fail with the key name, never the value.
+  const std::string noInvestor = writeConfig(dir / "no_investor.cfg",
+                                             "BROKER_ID = 9999\n"
+                                             "PASSWORD = secret-value\n"
+                                             "APP_ID = app\n"
+                                             "AUTH_CODE = auth\n"
+                                             "TRADE_FRONT = tcp://127.0.0.1:30001\n");
+  check(throwsContaining([&] { CtpConfig::load(noInvestor, envFrom({})); }, "INVESTOR_ID"),
+        "missing INVESTOR_ID throws naming INVESTOR_ID");
+
+  const std::string noPassword = writeConfig(dir / "no_password.cfg",
+                                             "BROKER_ID = 9999\n"
+                                             "INVESTOR_ID = 900001\n"
+                                             "APP_ID = app\n"
+                                             "AUTH_CODE = auth\n"
+                                             "TRADE_FRONT = tcp://127.0.0.1:30001\n");
+  const bool passwordThrows = throwsContaining(
+      [&] { CtpConfig::load(noPassword, envFrom({})); }, "PASSWORD");
+  check(passwordThrows, "missing PASSWORD throws naming PASSWORD");
+  const bool noValueLeak = !throwsContaining(
+      [&] { CtpConfig::load(noInvestor, envFrom({})); }, "secret-value");
+  check(noValueLeak, "missing-key error does not echo other values");
+
+  check(throwsContaining([&] { CtpConfig::load(dir / "absent.cfg", envFrom({})); }, "cannot open"),
+        "missing file throws");
+
+  const std::string noAuthCode = writeConfig(dir / "no_auth.cfg",
+                                             "BROKER_ID = 9999\n"
+                                             "INVESTOR_ID = 900001\n"
+                                             "PASSWORD = secret-value\n"
+                                             "APP_ID = app\n"
+                                             "TRADE_FRONT = tcp://127.0.0.1:30001\n");
+  check(throwsContaining([&] { CtpConfig::load(noAuthCode, envFrom({})); }, "AUTH_CODE"),
+        "missing AUTH_CODE throws naming AUTH_CODE");
+
+  // The file alone is enough when it carries the credentials.
+  const CtpConfig fromFile = CtpConfig::load(full, envFrom({}));
+  check(fromFile.password == "file-password", "PASSWORD read from file");
+  check(fromFile.brokerId == "9999", "BROKER_ID read from file");
+  check(fromFile.investorId == "900001", "INVESTOR_ID read from file");
+  check(fromFile.tradeFront == "tcp://127.0.0.1:30001", "TRADE_FRONT read from file");
+  check(fromFile.traderFlowPath == "state/test/trader", "TRADER_FLOW_PATH read from file");
+
+  // Environment overrides each credential; non-credential keys are untouched.
+  const CtpConfig fromEnv = CtpConfig::load(
+      full, envFrom({{"CTP_PASSWORD", "env-password"},
+                     {"CTP_APP_ID", "env-app"},
+                     {"CTP_AUTH_CODE", "env-auth"}}));
+  check(fromEnv.password == "env-password", "CTP_PASSWORD overrides file");
+  check(fromEnv.appId == "env-app", "CTP_APP_ID overrides file");
+  check(fromEnv.authCode == "env-auth", "CTP_AUTH_CODE overrides file");
+  check(fromEnv.investorId == "900001", "env override leaves INVESTOR_ID alone");
+
+  // A present-but-empty variable must not clobber the file value.
+  const CtpConfig blankEnv =
+      CtpConfig::load(full, envFrom({{"CTP_PASSWORD", ""}, {"CTP_AUTH_CODE", ""}}));
+  check(blankEnv.password == "file-password", "empty env var does not override password");
+  check(blankEnv.authCode == "file-auth", "empty env var does not override auth code");
+
+  // Credentials may live only in the environment; the file then omits the keys.
+  const std::string envOnlyFile = writeConfig(dir / "env_only.cfg",
+                                              "BROKER_ID = 9999\n"
+                                              "INVESTOR_ID = 900001\n"
+                                              "TRADE_FRONT = tcp://127.0.0.1:30001\n");
+  try {
+    const CtpConfig envOnly =
+        CtpConfig::load(envOnlyFile, envFrom({{"CTP_PASSWORD", "env-password"},
+                                              {"CTP_APP_ID", "env-app"},
+                                              {"CTP_AUTH_CODE", "env-auth"}}));
+    check(envOnly.password == "env-password" && envOnly.appId == "env-app" &&
+              envOnly.authCode == "env-auth",
+          "credentials can come only from the environment");
+  } catch (const std::exception& error) {
+    check(false, std::string("env-only credentials should load: ") + error.what());
+  }
+
+  // summary() is the loggable form: no credential may appear in it.
+  const std::string summary = fromEnv.summary();
+  const bool leaks = summary.find("env-password") != std::string::npos ||
+                     summary.find("env-auth") != std::string::npos ||
+                     summary.find("file-password") != std::string::npos;
+  check(!leaks, "summary does not contain password or auth code");
+
+  if (failures != 0) {
+    std::cerr << failures << " check(s) failed\n";
     return 1;
   }
-  std::cout << "ctp_config: configure fails with a CTP_HOME message\n";
+  std::cout << "ctp_config: required keys, env overrides, and redacted summary\n";
   return 0;
 }

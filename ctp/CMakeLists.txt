@@ -1,15 +1,20 @@
 find_package(CTP REQUIRED)
 
-# shortcut: INTERFACE until CTP sources exist (Task 2+); switch to STATIC then.
-add_library(ors_ctp_core INTERFACE)
-target_link_libraries(ors_ctp_core INTERFACE CTP::trader CTP::md)
+# CtpConfig has no SDK dependency, so its unit test runs without the CTP .so.
+add_library(ors_ctp_config STATIC src/CtpConfig.cpp)
+target_include_directories(ors_ctp_config PUBLIC include)
+
+add_library(ors_ctp_core STATIC src/CtpTraderSession.cpp)
+target_include_directories(ors_ctp_core PUBLIC include)
+target_link_libraries(ors_ctp_core PUBLIC ors_ctp_config PRIVATE CTP::trader)
 
 add_executable(ors_ctp src/main.cpp)
 target_link_libraries(ors_ctp PRIVATE ors_ctp_core CTP::trader CTP::md)
 
 add_executable(ctp_config_test tests/CtpConfigTest.cpp)
-target_compile_definitions(ctp_config_test PRIVATE
-  ORS_CTP_CMAKE_COMMAND="${CMAKE_COMMAND}"
-  ORS_SOURCE_DIR="${PROJECT_SOURCE_DIR}"
-  ORS_TEST_BUILD_DIR="${CMAKE_CURRENT_BINARY_DIR}/ctp_config_test_build")
+target_link_libraries(ctp_config_test PRIVATE ors_ctp_config)
 add_test(NAME ctp_config COMMAND ctp_config_test)
+
+# Executes the binary, so a missing/incompatible CTP .so fails here and not
+# only at link time.
+add_test(NAME ctp_link_smoke COMMAND ors_ctp)
