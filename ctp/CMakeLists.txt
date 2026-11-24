@@ -29,7 +29,7 @@ target_include_directories(ors_ctp_config PUBLIC include)
 
 add_library(ors_ctp_core STATIC src/CtpTraderSession.cpp src/CtpMdSession.cpp
                                 src/CtpQueryService.cpp src/CtpOrderRefMap.cpp
-                                src/CtpAdapter.cpp)
+                                src/CtpAdapter.cpp src/CtpReconciler.cpp)
 target_include_directories(ors_ctp_core PUBLIC include)
 target_link_libraries(ors_ctp_core PUBLIC ors_ctp_config PRIVATE CTP::trader CTP::md)
 
@@ -78,6 +78,10 @@ add_test(NAME ctp_order_ref_map COMMAND ctp_order_ref_map_test)
 add_executable(ctp_adapter_test tests/CtpAdapterTest.cpp)
 target_link_libraries(ctp_adapter_test PRIVATE ors_ctp_core CTP::trader)
 add_test(NAME ctp_adapter COMMAND ctp_adapter_test)
+
+add_executable(ctp_reconciler_test tests/CtpReconcilerTest.cpp)
+target_link_libraries(ctp_reconciler_test PRIVATE ors_ctp_core)
+add_test(NAME ctp_reconciler COMMAND ctp_reconciler_test)
 
 # order-smoke is dry-run unless --live, so ctest can reach the mode without a
 # config, a login or an order.
