@@ -129,14 +129,21 @@ session closed (02:55 CST). The native `order-smoke` on the same CTP code also
 returned cancel rejection `当前状态禁止` and no trade. Runtime account/position
 queries are published by a separate thread, so they do not block session/MD.
 
-So the L1 wiring is **verified through command submission and execution
-publication**, but **fill + account/position assertion still need a trading-hours
+An independent L1 snapshot client also verified the runtime query thread:
+
+```text
+SNAPSHOT ready=true account=true positions=2
+```
+
+So the L1 wiring is **verified through command submission, execution publication,
+and account/position snapshots**, but **live fill/cancel still need a trading-hours
 run**.
 
 ## 7. Known gaps
 
 ```text
-1. Live fill + FastTrade position/account assertion not yet re-run after the E2E wiring.
+1. Live fill/cancel not yet re-run after the E2E wiring; the 02:55 CST run hit the
+   closed SHFE night session.
 2. CtpReconciler is unit-tested but not wired into the reconnect loop.
 3. ContractRuntime uses test sourceSessionId=1/epoch=1 and test stream base 9000;
    production session/epoch durability is not implemented here.
