@@ -87,7 +87,7 @@ std::string formatLevels(const Prices& prices, const Quantities& qtys) {
 
 int loginSmoke(const CtpConfig& config) {
   ors::ctp::CtpTraderSession session(config);
-  if (!session.start(std::chrono::seconds(60))) {
+  if (!session.start(std::chrono::seconds(120))) {
     std::cerr << "FAILED: " << session.lastError() << '\n';
     return 1;
   }
@@ -157,7 +157,7 @@ struct SnapshotPrinter final : ors::ctp::SnapshotSink {
 
 int querySmoke(const CtpConfig& config) {
   ors::ctp::CtpTraderSession session(config);
-  if (!session.start(std::chrono::seconds(60))) {
+  if (!session.start(std::chrono::seconds(120))) {
     std::cerr << "FAILED: " << session.lastError() << '\n';
     return 1;
   }
@@ -194,7 +194,7 @@ int querySmoke(const CtpConfig& config) {
 
 int mdSmoke(const CtpConfig& config, const std::vector<std::string>& instruments) {
   ors::ctp::CtpMdSession session(config);
-  if (!session.start(std::chrono::seconds(60))) {
+  if (!session.start(std::chrono::seconds(120))) {
     std::cerr << "FAILED: " << session.lastError() << '\n';
     return 1;
   }
@@ -391,7 +391,7 @@ int orderSmoke(const std::string& configPath, const std::vector<std::string>& in
   std::cout << "config: " << config.summary() << '\n';
 
   CtpTraderSession session(config);
-  if (!session.start(std::chrono::seconds(60))) {
+  if (!session.start(std::chrono::seconds(120))) {
     std::cerr << "FAILED: " << session.lastError() << '\n';
     return 1;
   }
