@@ -9,7 +9,13 @@ target_include_directories(ors_contract PUBLIC include "${CONTRACT_GENERATED_DIR
 target_compile_features(ors_contract PUBLIC cxx_std_20)
 
 find_package(Threads REQUIRED)
-set(AERON_HOME "/opt/quantlink-fin/aeron-src" CACHE PATH "Aeron source/build tree")
+set(AERON_HOME "" CACHE PATH "Aeron source/build tree; must be supplied")
+if(NOT AERON_HOME AND DEFINED ENV{AERON_HOME})
+  set(AERON_HOME "$ENV{AERON_HOME}" CACHE PATH "Aeron source/build tree" FORCE)
+endif()
+if(NOT AERON_HOME)
+  message(FATAL_ERROR "AERON_HOME is required (Aeron source/build tree)")
+endif()
 find_path(AERON_CPP_INCLUDE NAMES Aeron.h
     PATHS "${AERON_HOME}/aeron-client/src/main/cpp_wrapper" REQUIRED)
 find_path(AERON_C_INCLUDE NAMES aeronc.h

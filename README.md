@@ -24,6 +24,19 @@ CONTRACT_HOME=/path/to/quantlink-venue-contract \
 
 生成物写到 `build/generated/contract/`，不提交。
 
+190 构建需要显式提供 CTP/Aeron 路径：
+
+```bash
+cmake -S . -B build \
+  -DCTP_HOME=/root/quantlink-trading/ors/third_party/ctp/linux \
+  -DAERON_HOME=/opt/quantlink-fin/aeron-src \
+  -DCONTRACT_GENERATED_DIR="$PWD/build/generated/contract"
+cmake --build build -j
+ctest --test-dir build --output-on-failure
+```
+
+不提供 `AERON_HOME` 时 CMake 会直接报错，不再默认依赖 `/opt` 路径。
+
 原则：
 
 ```text
