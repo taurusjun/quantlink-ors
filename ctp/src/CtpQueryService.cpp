@@ -121,7 +121,10 @@ OrderSnapshot mapOrderSnapshot(const CThostFtdcOrderField& row,
   snapshot.orderStatus = row.OrderStatus;
   snapshot.volumeTraded = row.VolumeTraded;
   snapshot.volumeTotal = row.VolumeTotal;
+  snapshot.volumeTotalOriginal = row.VolumeTotalOriginal;
   snapshot.limitPrice = money(row.LimitPrice);
+  snapshot.frontId = row.FrontID;
+  snapshot.sessionId = row.SessionID;
   return snapshot;
 }
 

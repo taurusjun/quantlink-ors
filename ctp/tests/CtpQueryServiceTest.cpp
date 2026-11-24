@@ -166,7 +166,10 @@ void checkOrderAndTradeMapping() {
   order.OrderStatus = THOST_FTDC_OST_AllTraded;
   order.VolumeTraded = 2;
   order.VolumeTotal = 2;
+  order.VolumeTotalOriginal = 3;
   order.LimitPrice = std::numeric_limits<double>::max();
+  order.FrontID = 7;
+  order.SessionID = 9001;
 
   const auto orderSnapshot = mapOrderSnapshot(order, header);
   check(orderSnapshot.orderRef == "42", "orderRef copied");
@@ -176,6 +179,10 @@ void checkOrderAndTradeMapping() {
   check(orderSnapshot.offsetFlag == THOST_FTDC_OF_Open, "order offset flag copied");
   check(orderSnapshot.orderStatus == THOST_FTDC_OST_AllTraded, "order status kept raw");
   check(orderSnapshot.volumeTraded == 2 && orderSnapshot.volumeTotal == 2, "order volumes copied");
+  check(orderSnapshot.volumeTotalOriginal == 3, "original volume copied");
+  // Cancel needs the same (FrontID, SessionID, OrderRef) triple ReqOrderAction takes.
+  check(orderSnapshot.frontId == 7 && orderSnapshot.sessionId == 9001,
+        "front and session id copied for ReqOrderAction");
   checkNear(orderSnapshot.limitPrice, 0.0, "DBL_MAX limit price maps to zero");
   check(orderSnapshot.header.snapshotId == header.snapshotId, "order keeps the batch header");
 

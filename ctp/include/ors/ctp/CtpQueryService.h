@@ -75,7 +75,11 @@ struct OrderSnapshot {
   char orderStatus{0};  ///< raw CTP status; the L0 enum mapping is Task 5
   int volumeTraded{0};
   int volumeTotal{0};
+  int volumeTotalOriginal{0};
   double limitPrice{0.0};
+  // ReqOrderAction addresses an order by (FrontID, SessionID, OrderRef).
+  int frontId{0};
+  int sessionId{0};
 };
 
 struct TradeSnapshot {

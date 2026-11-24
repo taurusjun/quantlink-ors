@@ -119,6 +119,8 @@ struct SnapshotPrinter final : ors::ctp::SnapshotSink {
       std::cout << "  order " << row.instrumentId << " ref=" << row.orderRef
                 << " sysId=" << row.orderSysId << " status=" << row.orderStatus
                 << " traded=" << row.volumeTraded << '/' << row.volumeTotal
+                << " original=" << row.volumeTotalOriginal
+                << " front=" << row.frontId << " session=" << row.sessionId
                 << " limit=" << row.limitPrice << '\n';
     }
     for (const auto& row : snapshot.trades) {
