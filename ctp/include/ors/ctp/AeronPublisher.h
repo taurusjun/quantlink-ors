@@ -23,6 +23,8 @@ class AeronFramePublisher final : public FramePublisher {
 
   bool publish(int streamId, const char* data, std::size_t length) override;
 
+  bool isConnected(int streamId) const;
+
  private:
   std::shared_ptr<aeron::Aeron> aeron_;
   std::map<int, std::shared_ptr<aeron::Publication>> publications_;

@@ -10,7 +10,7 @@
 repo 内没有 #include 其他项目源码
 没有依赖 ctp-adapter / quantlink-fin-src
 PriceSanitize 已统一
-AERON_HOME 必须显式提供
+AERON_HOME 和 AERON_RUNTIME_HOME 必须显式提供
 190 clean build + ctest 13/13 PASS
 ```
 
@@ -21,8 +21,8 @@ CTP SDK
   /root/quantlink-trading/ors/third_party/ctp/linux
 
 Aeron
-  /opt/quantlink-fin/aeron-src
-  AERON_HOME 由构建环境提供
+  /opt/quantlink-fin/aeron-src       AERON_HOME 头文件
+  /opt/quantlink-fin/aeron-runtime   AERON_RUNTIME_HOME 动态库
 ```
 
 这些是第三方 SDK/库，不提交二进制或头文件。
@@ -48,6 +48,7 @@ CONTRACT_HOME=/opt/quantlink-venue-contract \
 cmake -S . -B build \
   -DCTP_HOME=/root/quantlink-trading/ors/third_party/ctp/linux \
   -DAERON_HOME=/opt/quantlink-fin/aeron-src \
+  -DAERON_RUNTIME_HOME=/opt/quantlink-fin/aeron-runtime \
   -DCONTRACT_GENERATED_DIR="$PWD/build/generated/contract"
 cmake --build build -j
 ctest --test-dir build --output-on-failure
@@ -59,9 +60,9 @@ Result:
 100% tests passed, 0 tests failed out of 13
 ```
 
-Missing `AERON_HOME` fails fast:
+Missing `AERON_HOME` or `AERON_RUNTIME_HOME` fails fast:
 
 ```text
 CMake Error at ctp/CMakeLists.txt:17 (message):
-  AERON_HOME is required (Aeron source/build tree)
+  AERON_HOME and AERON_RUNTIME_HOME are required
 ```

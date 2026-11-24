@@ -9,23 +9,27 @@ target_include_directories(ors_contract PUBLIC include "${CONTRACT_GENERATED_DIR
 target_compile_features(ors_contract PUBLIC cxx_std_20)
 
 find_package(Threads REQUIRED)
-set(AERON_HOME "" CACHE PATH "Aeron source/build tree; must be supplied")
+set(AERON_HOME "" CACHE PATH "Aeron source headers; must be supplied")
+set(AERON_RUNTIME_HOME "" CACHE PATH "Aeron runtime lib directory; must be supplied")
 if(NOT AERON_HOME AND DEFINED ENV{AERON_HOME})
-  set(AERON_HOME "$ENV{AERON_HOME}" CACHE PATH "Aeron source/build tree" FORCE)
+  set(AERON_HOME "$ENV{AERON_HOME}" CACHE PATH "Aeron source headers" FORCE)
 endif()
-if(NOT AERON_HOME)
-  message(FATAL_ERROR "AERON_HOME is required (Aeron source/build tree)")
+if(NOT AERON_RUNTIME_HOME AND DEFINED ENV{AERON_RUNTIME_HOME})
+  set(AERON_RUNTIME_HOME "$ENV{AERON_RUNTIME_HOME}" CACHE PATH "Aeron runtime lib" FORCE)
+endif()
+if(NOT AERON_HOME OR NOT AERON_RUNTIME_HOME)
+  message(FATAL_ERROR "AERON_HOME and AERON_RUNTIME_HOME are required")
 endif()
 find_path(AERON_CPP_INCLUDE NAMES Aeron.h
     PATHS "${AERON_HOME}/aeron-client/src/main/cpp_wrapper" REQUIRED)
 find_path(AERON_C_INCLUDE NAMES aeronc.h
     PATHS "${AERON_HOME}/aeron-client/src/main/c" REQUIRED)
-find_library(AERON_STATIC_LIB NAMES aeron_static
-    PATHS "${AERON_HOME}/build/lib" REQUIRED)
+find_library(AERON_LIB NAMES aeron
+    PATHS "${AERON_RUNTIME_HOME}/lib" REQUIRED)
 
-add_library(ors_aeron STATIC src/AeronPublisher.cpp)
+add_library(ors_aeron STATIC src/AeronPublisher.cpp src/AeronCommandSubscriber.cpp src/ContractRuntime.cpp)
 target_include_directories(ors_aeron PUBLIC include "${AERON_CPP_INCLUDE}" "${AERON_C_INCLUDE}")
-target_link_libraries(ors_aeron PUBLIC ors_contract "${AERON_STATIC_LIB}"
+target_link_libraries(ors_aeron PUBLIC ors_contract ors_ctp_core "${AERON_LIB}"
     Threads::Threads ${CMAKE_DL_LIBS} rt)
 target_compile_features(ors_aeron PUBLIC cxx_std_20)
 
@@ -40,7 +44,8 @@ target_include_directories(ors_ctp_core PUBLIC include)
 target_link_libraries(ors_ctp_core PUBLIC ors_ctp_config PRIVATE CTP::trader CTP::md)
 
 add_executable(ors_ctp src/main.cpp)
-target_link_libraries(ors_ctp PRIVATE ors_ctp_core CTP::trader CTP::md)
+target_link_libraries(ors_ctp PRIVATE ors_ctp_core ors_aeron CTP::trader CTP::md
+    "${AERON_LIB}" Threads::Threads ${CMAKE_DL_LIBS} rt)
 
 add_executable(ctp_config_test tests/CtpConfigTest.cpp)
 target_link_libraries(ctp_config_test PRIVATE ors_ctp_config)

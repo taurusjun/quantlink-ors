@@ -2,9 +2,10 @@
 
 - 状态：PARTIAL
 - 环境：190 (`root@101.43.54.190`), SimNow `ors-simnow.cfg`
-- 代码：`52f4c9f feat(ctp): publish L0 contract 0.2.0` + `dae6702 feat(ctp): reconcile after reconnect`
+- 代码：`52f4c9f feat(ctp): publish L0 contract 0.2.0` + `dae6702 feat(ctp): reconcile after reconnect` + 当前 E2E wiring
 - CTP SDK：`/root/quantlink-trading/ors/third_party/ctp/linux`
-- Aeron：`/opt/quantlink-fin/aeron-src`
+- Aeron headers：`/opt/quantlink-fin/aeron-src`
+- Aeron runtime：`/opt/quantlink-fin/aeron-runtime`
 
 ## 1. Build / ctest
 
@@ -13,6 +14,8 @@ SBE_JAR=/root/sbe-all-1.35.6.jar \
 CONTRACT_HOME=/opt/quantlink-venue-contract \
 ./tools/gen_contract_cpp.sh
 cmake -S . -B build -DCTP_HOME=/root/quantlink-trading/ors/third_party/ctp/linux \
+      -DAERON_HOME=/opt/quantlink-fin/aeron-src \
+      -DAERON_RUNTIME_HOME=/opt/quantlink-fin/aeron-runtime \
       -DCONTRACT_GENERATED_DIR=/root/quantlink-ors/build/generated/contract
 cmake --build build -j
 ctest --test-dir build --output-on-failure
@@ -21,7 +24,7 @@ ctest --test-dir build --output-on-failure
 Result:
 
 ```text
-100% tests passed, 0 tests failed out of 12
+100% tests passed, 0 tests failed out of 13
 ```
 
 Covered:
@@ -91,45 +94,66 @@ ReqOrderAction -> OnRtnOrder(CANCELED)
 OnRtnTrade -> Trade
 ```
 
-## 6. Contract 0.2.0 output
+## 6. L1 runtime wiring (CTP ORS -> FastTrade AccessClient)
 
-Implemented and unit-tested:
+Implemented:
 
 ```text
 C++ SBE generated from quantlink-venue-contract 0.2.0
 ContractSink: OrderUpdate, Trade, MarketData, AccountSnapshot,
               PositionSnapshot, VenueSession
-AeronFramePublisher: Aeron C++ publication adapter
+AeronFramePublisher: Aeron C++ publication adapter (shared libaeron)
+AeronCommandSubscriber: OrderRequest/CancelRequest -> CtpAdapter
+ContractRuntime: long-running session/MD/command loop; account/position query thread
+main.cpp: --mode runtime
 ```
 
-Not yet wired / not yet accepted end-to-end:
+Test stream layout (matching FastTrade `AccessConfig.singleChannel` base 9000):
 
 ```text
-main.cpp does not yet publish VenueSession/MarketData/Execution via ContractSink
-FastTrade AccessClient has not subscribed to a live ORS ContractSink yet
-CtpReconciler is unit-tested but not wired into the reconnect loop
-manual disconnect/reconnect smoke was not run
+MD 9001, order 9002, cancel 9003, execution 9004,
+position 9005, account 9006, session 9007
 ```
 
-Therefore this acceptance is **PARTIAL**, not a production L1 end-to-end sign-off.
+Observed on 190 with one runtime process and FastTrade AccessSmoke:
+
+```text
+runtime READY venue=SIMNOW account=142266 ors=ors-ctp-e2e streams=9004,9001
+AccessClient: session=1/READY, MD au2612 exchange=SHFE ask=765.98
+MD decoded with 20 levels; order submitted on Aeron 9002
+CTP OrderUpdate: NEW -> (exchange rejection) REJECTED
+```
+
+The rejection was not an L1 wiring failure: the test ran after the SHFE night
+session closed (02:55 CST). The native `order-smoke` on the same CTP code also
+returned cancel rejection `当前状态禁止` and no trade. Runtime account/position
+queries are published by a separate thread, so they do not block session/MD.
+
+So the L1 wiring is **verified through command submission and execution
+publication**, but **fill + account/position assertion still need a trading-hours
+run**.
 
 ## 7. Known gaps
 
 ```text
-1. ContractSink/AeronPublisher are built but not wired into the ORS runtime.
-2. CtpReconciler is not called after a real reconnect.
-3. Smoke orderRef is process-local; production orderRef/epoch must be durable.
-4. VenueSession publication and lastSeqByStream high-water are not live yet.
+1. Live fill + FastTrade position/account assertion not yet re-run after the E2E wiring.
+2. CtpReconciler is unit-tested but not wired into the reconnect loop.
+3. ContractRuntime uses test sourceSessionId=1/epoch=1 and test stream base 9000;
+   production session/epoch durability is not implemented here.
+4. Manual disconnect/reconnect and stale-report discard smoke was not run.
+5. CTP ErrorMsg is GBK; the contracted reason string is still garbled on the L1 wire.
 ```
+
+Therefore this acceptance is **PARTIAL**, not a production L1 end-to-end sign-off.
 
 ## 8. Next acceptance gate
 
 ```text
-start one long-running ORS process
-  -> publish VenueSession READY
-  -> publish MarketData 20 levels
-  -> publish Account/Position snapshots
-  -> FastTrade AccessClient subscribes and sees all streams
-  -> one live order/cancel/fill
+rerun during exchange trading hours:
+  start one long-running ORS process
+  -> FastTrade AccessClient sees VenueSession READY + MarketData
+  -> one live order/fill
+  -> FastTrade sees OrderUpdate/Trade and fresh Account/Position
+  -> optional cancel path
   -> disconnect/reconnect, epoch changes, old reports discarded
 ```

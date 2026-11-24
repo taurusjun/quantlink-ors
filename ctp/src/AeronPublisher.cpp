@@ -40,4 +40,9 @@ bool AeronFramePublisher::publish(int streamId, const char* data, std::size_t le
   return publication->second->offer(buffer, 0, static_cast<aeron::index_t>(length)) > 0;
 }
 
+bool AeronFramePublisher::isConnected(int streamId) const {
+  const auto publication = publications_.find(streamId);
+  return publication != publications_.end() && publication->second->isConnected();
+}
+
 }  // namespace ors::ctp

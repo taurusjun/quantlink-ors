@@ -31,12 +31,13 @@ CONTRACT_HOME=/path/to/quantlink-venue-contract \
 cmake -S . -B build \
   -DCTP_HOME=/root/quantlink-trading/ors/third_party/ctp/linux \
   -DAERON_HOME=/opt/quantlink-fin/aeron-src \
+  -DAERON_RUNTIME_HOME=/opt/quantlink-fin/aeron-runtime \
   -DCONTRACT_GENERATED_DIR="$PWD/build/generated/contract"
 cmake --build build -j
 ctest --test-dir build --output-on-failure
 ```
 
-不提供 `AERON_HOME` 时 CMake 会直接报错，不再默认依赖 `/opt` 路径。
+不提供 `AERON_HOME` 或 `AERON_RUNTIME_HOME` 时 CMake 会直接报错，不再默认依赖 `/opt` 路径。
 
 原则：
 
