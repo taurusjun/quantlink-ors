@@ -22,9 +22,11 @@ target_link_libraries(ctp_md_test PRIVATE ors_ctp_core)
 add_test(NAME ctp_md COMMAND ctp_md_test)
 
 # Row mapping and batch aggregation; the failure case uses an unstarted session,
-# so no login and no network either.
+# so no login and no network either. The test builds real CTP rows, so it needs
+# the SDK include path: CTP::trader is PRIVATE to ors_ctp_core and does not
+# propagate it.
 add_executable(ctp_query_test tests/CtpQueryServiceTest.cpp)
-target_link_libraries(ctp_query_test PRIVATE ors_ctp_core)
+target_link_libraries(ctp_query_test PRIVATE ors_ctp_core CTP::trader)
 add_test(NAME ctp_query COMMAND ctp_query_test)
 
 # Executes the binary, so a missing/incompatible CTP .so fails here and not
