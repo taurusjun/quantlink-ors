@@ -1,5 +1,28 @@
 find_package(CTP REQUIRED)
 
+set(CONTRACT_GENERATED_DIR "${CMAKE_BINARY_DIR}/generated/contract" CACHE PATH
+    "Directory produced by tools/gen_contract_cpp.sh")
+
+# SBE codec + Aeron publisher adapter; generated headers are build artifacts.
+add_library(ors_contract STATIC src/ContractSink.cpp)
+target_include_directories(ors_contract PUBLIC include "${CONTRACT_GENERATED_DIR}")
+target_compile_features(ors_contract PUBLIC cxx_std_20)
+
+find_package(Threads REQUIRED)
+set(AERON_HOME "/opt/quantlink-fin/aeron-src" CACHE PATH "Aeron source/build tree")
+find_path(AERON_CPP_INCLUDE NAMES Aeron.h
+    PATHS "${AERON_HOME}/aeron-client/src/main/cpp_wrapper" REQUIRED)
+find_path(AERON_C_INCLUDE NAMES aeronc.h
+    PATHS "${AERON_HOME}/aeron-client/src/main/c" REQUIRED)
+find_library(AERON_STATIC_LIB NAMES aeron_static
+    PATHS "${AERON_HOME}/build/lib" REQUIRED)
+
+add_library(ors_aeron STATIC src/AeronPublisher.cpp)
+target_include_directories(ors_aeron PUBLIC include "${AERON_CPP_INCLUDE}" "${AERON_C_INCLUDE}")
+target_link_libraries(ors_aeron PUBLIC ors_contract "${AERON_STATIC_LIB}"
+    Threads::Threads ${CMAKE_DL_LIBS} rt)
+target_compile_features(ors_aeron PUBLIC cxx_std_20)
+
 # CtpConfig has no SDK dependency, so its unit test runs without the CTP .so.
 add_library(ors_ctp_config STATIC src/CtpConfig.cpp)
 target_include_directories(ors_ctp_config PUBLIC include)
@@ -66,3 +89,8 @@ add_test(NAME ctp_order_mode_requires_config COMMAND ors_ctp --mode order-smoke 
                                                    --instruments au2612 --price 500 --qty 1)
 set_tests_properties(ctp_order_mode_requires_config PROPERTIES
   PASS_REGULAR_EXPRESSION "--config is required for --mode order-smoke")
+
+# SBE codec and stream ownership; no CTP SDK, no network.
+add_executable(ctp_contract_sink_test tests/ContractSinkTest.cpp)
+target_link_libraries(ctp_contract_sink_test PRIVATE ors_contract)
+add_test(NAME ctp_contract_sink COMMAND ctp_contract_sink_test)
