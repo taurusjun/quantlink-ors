@@ -153,6 +153,40 @@ struct CtpTraderSession::Impl {
     return lastError_;
   }
 
+  const CtpConfig& config() const { return config_; }
+
+  std::string tradingDay() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return tradingDay_;
+  }
+
+  CThostFtdcTraderApi* traderApi() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return api_;
+  }
+
+  int nextRequestId() { return ++requestId_; }
+
+  void setQuerySpi(CThostFtdcTraderSpi* spi) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    querySpi_ = spi;
+  }
+
+  CThostFtdcTraderSpi* querySpi() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return querySpi_;
+  }
+
+  int volumeMultiple(const std::string& instrumentId) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    for (const auto& instrument : instruments_) {
+      if (instrument.instrumentId == instrumentId) {
+        return instrument.volumeMultiple;
+      }
+    }
+    return 0;
+  }
+
   std::vector<Instrument> instruments() const {
     std::lock_guard<std::mutex> lock(mutex_);
     return instruments_;
@@ -254,7 +288,7 @@ struct CtpTraderSession::Impl {
     }
   }
 
-  void onRspUserLogin(const CThostFtdcRspUserLoginField*,
+  void onRspUserLogin(const CThostFtdcRspUserLoginField* login,
                       const CThostFtdcRspInfoField* info, bool isLast) {
     if (hasError(info)) {
       fail("login failed: " + errorText(info));
@@ -262,6 +296,10 @@ struct CtpTraderSession::Impl {
     }
     if (!isLast) {
       return;
+    }
+    if (login != nullptr) {
+      std::lock_guard<std::mutex> lock(mutex_);
+      tradingDay_ = login->TradingDay;
     }
     setState(SessionState::SettlementConfirming);
 
@@ -386,8 +424,43 @@ struct CtpTraderSession::Impl {
       owner_.onRspQryInstrument(instrument, info, isLast);
     }
 
+    // Trade queries belong to whoever registered a query SPI; the session only
+    // keeps the single SPI CTP allows.
+    void OnRspQryTradingAccount(CThostFtdcTradingAccountField* account,
+                                CThostFtdcRspInfoField* info, int requestId,
+                                bool isLast) override {
+      if (CThostFtdcTraderSpi* spi = owner_.querySpi()) {
+        spi->OnRspQryTradingAccount(account, info, requestId, isLast);
+      }
+    }
+
+    void OnRspQryInvestorPosition(CThostFtdcInvestorPositionField* position,
+                                  CThostFtdcRspInfoField* info, int requestId,
+                                  bool isLast) override {
+      if (CThostFtdcTraderSpi* spi = owner_.querySpi()) {
+        spi->OnRspQryInvestorPosition(position, info, requestId, isLast);
+      }
+    }
+
+    void OnRspQryOrder(CThostFtdcOrderField* order, CThostFtdcRspInfoField* info,
+                       int requestId, bool isLast) override {
+      if (CThostFtdcTraderSpi* spi = owner_.querySpi()) {
+        spi->OnRspQryOrder(order, info, requestId, isLast);
+      }
+    }
+
+    void OnRspQryTrade(CThostFtdcTradeField* trade, CThostFtdcRspInfoField* info,
+                       int requestId, bool isLast) override {
+      if (CThostFtdcTraderSpi* spi = owner_.querySpi()) {
+        spi->OnRspQryTrade(trade, info, requestId, isLast);
+      }
+    }
+
     void OnRspError(CThostFtdcRspInfoField* info, int requestId, bool) override {
       owner_.onRspError(info, requestId);
+      if (CThostFtdcTraderSpi* spi = owner_.querySpi()) {
+        spi->OnRspError(info, requestId, true);
+      }
     }
 
     Impl& owner_;
@@ -398,10 +471,12 @@ struct CtpTraderSession::Impl {
   std::condition_variable cv_;
   SessionState state_{SessionState::Disconnected};
   std::string lastError_;
+  std::string tradingDay_;
   std::vector<Instrument> instruments_;
   std::atomic<int> requestId_{0};
   bool stopping_{false};
   CThostFtdcTraderApi* api_{nullptr};
+  CThostFtdcTraderSpi* querySpi_{nullptr};
   std::unique_ptr<TraderSpi> spi_;
 };
 
@@ -420,6 +495,30 @@ SessionState CtpTraderSession::state() const {
 
 std::string CtpTraderSession::lastError() const {
   return impl_->lastError();
+}
+
+const CtpConfig& CtpTraderSession::config() const {
+  return impl_->config();
+}
+
+std::string CtpTraderSession::tradingDay() const {
+  return impl_->tradingDay();
+}
+
+CThostFtdcTraderApi* CtpTraderSession::traderApi() const {
+  return impl_->traderApi();
+}
+
+int CtpTraderSession::nextRequestId() {
+  return impl_->nextRequestId();
+}
+
+void CtpTraderSession::setQuerySpi(CThostFtdcTraderSpi* spi) {
+  impl_->setQuerySpi(spi);
+}
+
+int CtpTraderSession::volumeMultiple(const std::string& instrumentId) const {
+  return impl_->volumeMultiple(instrumentId);
 }
 
 bool CtpTraderSession::queryInstruments() {

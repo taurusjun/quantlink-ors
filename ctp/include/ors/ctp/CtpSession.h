@@ -9,6 +9,10 @@
 
 #include "ors/ctp/CtpConfig.h"
 
+// SDK types; only pointers cross this header, the CTP headers stay in the .cpp.
+class CThostFtdcTraderApi;
+class CThostFtdcTraderSpi;
+
 namespace ors::ctp {
 
 enum class SessionState {
@@ -98,11 +102,35 @@ class CtpTraderSession {
   SessionState state() const;
   std::string lastError() const;
 
+  /// Settings this session was created with. Credentials are in there but are
+  /// never logged; use CtpConfig::summary() for output.
+  const CtpConfig& config() const;
+
+  /// Trading day from the login response; empty before READY.
+  std::string tradingDay() const;
+
+  /// The single TraderApi behind this session; null before a successful
+  /// start(). Request-only users send through it and receive their responses
+  /// via setQuerySpi().
+  CThostFtdcTraderApi* traderApi() const;
+
+  /// Next id of this session's request counter, so every request on the one API
+  /// stays unique.
+  int nextRequestId();
+
+  /// CTP keeps one SPI, so the responses the session does not consume itself
+  /// are forwarded to this one. It must outlive the session or be cleared
+  /// first; pass nullptr to detach.
+  void setQuerySpi(CThostFtdcTraderSpi* spi);
+
   /// Re-runs the instrument query; allowed after settlement confirm and when
   /// already READY. Returns false when the request cannot be sent.
   bool queryInstruments();
 
   std::vector<Instrument> instruments() const;
+
+  /// Volume multiple of a listed instrument; 0 when it is not in the table.
+  int volumeMultiple(const std::string& instrumentId) const;
 
  private:
   struct Impl;

@@ -4,9 +4,12 @@
 #include <iostream>
 #include <sstream>
 #include <string>
+#include <thread>
+#include <utility>
 #include <vector>
 
 #include "ors/ctp/CtpConfig.h"
+#include "ors/ctp/CtpQueryService.h"
 #include "ors/ctp/CtpSession.h"
 
 namespace {
@@ -14,7 +17,7 @@ namespace {
 using ors::ctp::CtpConfig;
 
 void usage() {
-  std::cout << "usage: ors_ctp [--config PATH] [--mode login-smoke|md-smoke]\n"
+  std::cout << "usage: ors_ctp [--config PATH] [--mode login-smoke|md-smoke|query-smoke]\n"
                "              [--instruments ID[,ID...]]\n"
                "\n"
                "  (no arguments)          print this usage and exit\n"
@@ -22,7 +25,9 @@ void usage() {
                "                          instruments, print READY, exit 0\n"
                "  --mode md-smoke         log in to MdApi, subscribe --instruments,\n"
                "                          print the first tick padded to 20 levels,\n"
-               "                          exit 0\n";
+               "                          exit 0\n"
+               "  --mode query-smoke      log in to CTP and print the account,\n"
+               "                          position, order and trade snapshots\n";
 }
 
 std::vector<std::string> splitList(const std::string& value) {
@@ -66,6 +71,100 @@ int loginSmoke(const CtpConfig& config) {
   std::cout << toString(session.state()) << " instruments="
             << session.instruments().size() << '\n';
   return 0;
+}
+
+/// Prints each finished snapshot; the sink runs on the querying thread.
+struct SnapshotPrinter final : ors::ctp::SnapshotSink {
+  void onSnapshot(const ors::ctp::AccountSnapshot& snapshot) override {
+    const auto& header = snapshot.header;
+    std::cout << "account snapshot=" << header.snapshotId << " tradingDay=" << header.tradingDay
+              << " account=" << header.accountId << " balance=" << snapshot.balance
+              << " available=" << snapshot.available << " margin=" << snapshot.margin
+              << " frozenMargin=" << snapshot.frozenMargin
+              << " commission=" << snapshot.commission
+              << " closeProfit=" << snapshot.closeProfit
+              << " positionProfit=" << snapshot.positionProfit
+              << " deposit=" << snapshot.deposit << " withdraw=" << snapshot.withdraw << '\n';
+  }
+
+  void onSnapshot(const std::vector<ors::ctp::PositionSnapshot>& snapshot) override {
+    std::cout << "positions rows=" << snapshot.size();
+    if (!snapshot.empty()) {
+      std::cout << " snapshot=" << snapshot.front().header.snapshotId
+                << " tradingDay=" << snapshot.front().header.tradingDay;
+    }
+    std::cout << '\n';
+    for (const auto& row : snapshot) {
+      std::cout << "  position " << row.instrumentId << ' ' << row.exchange
+                << " long=" << row.longQty << " short=" << row.shortQty
+                << " todayLong=" << row.todayLong << " todayShort=" << row.todayShort
+                << " yesterdayLong=" << row.yesterdayLong
+                << " yesterdayShort=" << row.yesterdayShort << " avg=" << row.avgPrice
+                << " longAvg=" << row.longAvgPrice << " shortAvg=" << row.shortAvgPrice
+                << " settlement=" << row.settlementPrice << '\n';
+    }
+  }
+
+  void onSnapshot(const ors::ctp::ReconciliationSnapshot& snapshot) override {
+    std::cout << "orders rows=" << snapshot.orders.size()
+              << " trades rows=" << snapshot.trades.size();
+    if (!snapshot.orders.empty()) {
+      std::cout << " ordersSnapshot=" << snapshot.orders.front().header.snapshotId;
+    }
+    if (!snapshot.trades.empty()) {
+      std::cout << " tradesSnapshot=" << snapshot.trades.front().header.snapshotId;
+    }
+    std::cout << '\n';
+    for (const auto& row : snapshot.orders) {
+      std::cout << "  order " << row.instrumentId << " ref=" << row.orderRef
+                << " sysId=" << row.orderSysId << " status=" << row.orderStatus
+                << " traded=" << row.volumeTraded << '/' << row.volumeTotal
+                << " limit=" << row.limitPrice << '\n';
+    }
+    for (const auto& row : snapshot.trades) {
+      std::cout << "  trade " << row.instrumentId << " id=" << row.tradeId
+                << " ref=" << row.orderRef << " price=" << row.price
+                << " volume=" << row.volume << " at=" << row.tradeDate << ' '
+                << row.tradeTime << '\n';
+    }
+  }
+};
+
+int querySmoke(const CtpConfig& config) {
+  ors::ctp::CtpTraderSession session(config);
+  if (!session.start()) {
+    std::cerr << "FAILED: " << session.lastError() << '\n';
+    return 1;
+  }
+  std::cout << toString(session.state()) << " instruments="
+            << session.instruments().size() << '\n';
+
+  SnapshotPrinter printer;
+  ors::ctp::CtpQueryService queries(session);
+  queries.setSink(&printer);
+
+  using Query = bool (ors::ctp::CtpQueryService::*)(std::chrono::milliseconds);
+  const std::vector<std::pair<const char*, Query>> queriesToRun{
+      {"account", &ors::ctp::CtpQueryService::queryAccount},
+      {"positions", &ors::ctp::CtpQueryService::queryPositions},
+      {"orders", &ors::ctp::CtpQueryService::queryOrders},
+      {"trades", &ors::ctp::CtpQueryService::queryTrades},
+  };
+  int failed = 0;
+  bool first = true;
+  for (const auto& [name, query] : queriesToRun) {
+    if (!first) {
+      // CTP rate-limits trade queries to roughly one per second.
+      std::this_thread::sleep_for(std::chrono::seconds(1));
+    }
+    first = false;
+    std::cout << "query " << name << '\n';
+    if (!(queries.*query)(std::chrono::seconds(15))) {
+      std::cerr << "FAILED: " << name << " query: " << queries.lastError() << '\n';
+      ++failed;
+    }
+  }
+  return failed == 0 ? 0 : 1;
 }
 
 int mdSmoke(const CtpConfig& config, const std::vector<std::string>& instruments) {
@@ -125,7 +224,7 @@ int main(int argc, char** argv) {
     usage();
     return 0;
   }
-  if (mode != "login-smoke" && mode != "md-smoke") {
+  if (mode != "login-smoke" && mode != "md-smoke" && mode != "query-smoke") {
     std::cerr << "unsupported mode: " << mode << '\n';
     usage();
     return 2;
@@ -141,6 +240,9 @@ int main(int argc, char** argv) {
 
     if (mode == "login-smoke") {
       return loginSmoke(config);
+    }
+    if (mode == "query-smoke") {
+      return querySmoke(config);
     }
 
     // Only md-smoke needs a market data front; a trader-only run stays
