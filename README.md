@@ -13,6 +13,7 @@ L0 / ORS
 
 - [L0 ORS CTP 对接方案](docs/2026-11-24-l0-ors-ctp-design.md)
 - [CTP/SimNow 验收记录（PARTIAL）](docs/2026-11-24-ctp-acceptance.md)
+- [自包含检查](docs/2026-11-25-self-contained.md)
 
 Contract C++ SBE 生成：
 
