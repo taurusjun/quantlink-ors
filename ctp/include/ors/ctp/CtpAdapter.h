@@ -194,6 +194,13 @@ class CtpAdapter {
 
   bool onOrderRequest(const OrderRequest& request);
   bool onCancelRequest(const CancelRequest& request);
+
+  /// Publishes a local REJECTED without sending to CTP. Used by the runtime
+  /// while reconnect reconciliation is pending.
+  bool rejectOrderRequest(const OrderRequest& request, const std::string& reason);
+
+  /// Publishes a local cancel rejection without sending ReqOrderAction.
+  bool rejectCancelRequest(const CancelRequest& request, const std::string& reason);
   /// Always false; emits a REJECTED OrderUpdate naming the reason.
   bool onModifyRequest(const ModifyRequest& request);
 

@@ -1,6 +1,6 @@
 # 2026-11-24 CTP/SimNow Acceptance
 
-- 状态：PARTIAL（L1 E2E PASS；重连/C 未完成）
+- 状态：PARTIAL（L1 E2E PASS；重连基本链路 PASS，强对账/旧回报未完整验收）
 - 环境：190 (`root@101.43.54.190`), SimNow `ors-simnow.cfg`
 - 代码：`52f4c9f feat(ctp): publish L0 contract 0.2.0` + `dae6702 feat(ctp): reconcile after reconnect` + 当前 E2E wiring
 - CTP SDK：`/root/quantlink-trading/ors/third_party/ctp/linux`
@@ -167,14 +167,42 @@ SNAPSHOT ready=true account=true positions=2
 So the L1 wiring is **verified through command submission, execution publication,
 account/position snapshots, and one live fill** (Trade + fresh snapshots).
 
+## 6.4 Reconnect / epoch / reconciliation
+
+`CtpReconciler` is now wired into `ContractRuntime`:
+
+```text
+Disconnected/Failed after READY
+  -> runtime.reconnecting epoch=2
+  -> VenueSession LOST
+  -> queryOrders / queryTrades / queryPositions
+  -> CtpReconciler.reconcile(...)
+  -> runtime.reconciliation complete epoch=2
+  -> VenueSession READY
+
+During reconciliation:
+  new OrderRequest / CancelRequest are not sent to CTP
+  reconciler.canSubmit(orderRef) gates reused orderRefs
+```
+
+Real disconnect test on 190 (2026-11-25):
+
+```text
+temporary iptables INPUT/OUTPUT drop to 182.254.243.31 for 120s
+[ctp] front disconnected reason=8193
+runtime reconnecting epoch=2
+[ctp] state=AUTHENTICATING -> ... -> READY
+runtime reconciliation complete epoch=2
+post-reconnect order reached ACK (price did not fill)
+```
+
 ## 7. Known gaps
 
 ```text
-1. CtpReconciler is unit-tested but not wired into the reconnect loop.
-2. Automatic epoch increment on reconnect still belongs to the C reconnect work.
-3. Manual disconnect/reconnect and stale-report discard smoke was not run.
-4. GBK -> UTF-8 conversion and its unit test are done; console rendering depends
-   on the JVM output encoding.
+1. Strong old-epoch report isolation (stale CTP callbacks) and duplicate-orderRef
+   behavior after reopening a known OPEN order still need a dedicated test.
+2. GBK -> UTF-8 conversion and unit test are done; console rendering depends on
+   the JVM output encoding.
 ```
 
 Therefore this acceptance is **PARTIAL**, not a production L1 end-to-end sign-off.

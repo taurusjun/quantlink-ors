@@ -68,6 +68,9 @@ class ContractSink {
   bool publishPositionSnapshot(const PositionSnapshot& snapshot);
   bool publishSession(const VenueSessionEvent& session);
 
+  /// The caller must serialize this with publish* calls.
+  void setSourcePublicationEpoch(std::uint64_t epoch);
+
  private:
   bool publishFrame(int streamId, std::uint64_t length);
   std::uint64_t nextMarketDataSequence(const std::string& instrumentId);

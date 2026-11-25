@@ -260,7 +260,8 @@ stream IDs             由 --stream-base 整组配置
 ```
 
 真实重连时必须递增 `sourcePublicationEpoch` 并重新发布 `VenueSession`；旧 epoch
-的 OrderUpdate/Trade 必须丢弃。当前 CTP runtime 的自动重连接线仍属于后续工作。
+的 OrderUpdate/Trade 必须丢弃。runtime 已接入 `CtpReconciler`：断线发布 LOST，
+重连后查询 orders/trades/positions 对账，对账完成再发布 READY。
 
 ## 7. 订单与 ID
 

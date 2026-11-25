@@ -11,6 +11,7 @@
 #include "ors/ctp/AeronPublisher.h"
 #include "ors/ctp/CtpAdapter.h"
 #include "ors/ctp/CtpQueryService.h"
+#include "ors/ctp/CtpReconciler.h"
 #include "ors/ctp/CtpSession.h"
 
 namespace ors::ctp {
@@ -38,11 +39,22 @@ struct ContractRuntime::Impl final : ExecutionSink, SnapshotSink {
   CtpMdSession md;
   CtpQueryService queries;
   AeronCommandSubscriber commands;
+  CtpReconciler reconciler;
   std::size_t lastMdCount{0};
   bool mdPublished{false};
   std::chrono::steady_clock::time_point lastMdAt{};
   std::mutex sinkMutex;
+  std::mutex reconMutex;
   std::atomic_bool stopping{false};
+  std::atomic_bool reconciling{false};
+  std::atomic<std::uint64_t> currentEpoch{1};
+  SessionState lastTraderState{SessionState::Disconnected};
+  std::vector<OrderSnapshot> reconOrders;
+  std::vector<TradeSnapshot> reconTrades;
+  std::vector<PositionSnapshot> reconPositions;
+  bool reconOrdersReady{false};
+  bool reconTradesReady{false};
+  bool reconPositionsReady{false};
 
   Impl(CtpConfig configValue, ContractRuntimeConfig runtimeValue)
       : config(std::move(configValue)),
@@ -65,18 +77,34 @@ struct ContractRuntime::Impl final : ExecutionSink, SnapshotSink {
         queries(trader),
         commands(runtimeConfig.aeronDir, "aeron:ipc",
                  runtimeConfig.orderStream, runtimeConfig.cancelStream) {
+    currentEpoch.store(runtimeConfig.sourcePublicationEpoch);
+    reconciler.setEpoch(runtimeConfig.sourcePublicationEpoch);
     adapter.setSink(this);
     queries.setSink(this);
   }
 
   void onOrderUpdate(const OrderUpdate& update) override {
-    std::lock_guard<std::mutex> lock(sinkMutex);
-    sink.publishOrderUpdate(update);
+    OrderUpdate copy = update;
+    copy.sourceSessionId = runtimeConfig.sourceSessionId;
+    copy.sourcePublicationEpoch = currentEpoch.load(std::memory_order_relaxed);
+    {
+      std::lock_guard<std::mutex> lock(sinkMutex);
+      sink.publishOrderUpdate(copy);
+    }
+    std::lock_guard<std::mutex> lock(reconMutex);
+    reconciler.observe(copy);
   }
 
   void onTrade(const Trade& trade) override {
-    std::lock_guard<std::mutex> lock(sinkMutex);
-    sink.publishTrade(trade);
+    Trade copy = trade;
+    copy.sourceSessionId = runtimeConfig.sourceSessionId;
+    copy.sourcePublicationEpoch = currentEpoch.load(std::memory_order_relaxed);
+    {
+      std::lock_guard<std::mutex> lock(sinkMutex);
+      sink.publishTrade(copy);
+    }
+    std::lock_guard<std::mutex> lock(reconMutex);
+    reconciler.observe(copy);
   }
 
   void onSnapshot(const AccountSnapshot& snapshot) override {
@@ -85,25 +113,41 @@ struct ContractRuntime::Impl final : ExecutionSink, SnapshotSink {
   }
 
   void onSnapshot(const std::vector<PositionSnapshot>& snapshot) override {
-    std::lock_guard<std::mutex> lock(sinkMutex);
-    for (const auto& position : snapshot) sink.publishPositionSnapshot(position);
+    {
+      std::lock_guard<std::mutex> lock(sinkMutex);
+      for (const auto& position : snapshot) sink.publishPositionSnapshot(position);
+    }
+    if (!reconciling.load(std::memory_order_relaxed)) return;
+    std::lock_guard<std::mutex> lock(reconMutex);
+    reconPositions = snapshot;
+    reconPositionsReady = true;
   }
 
   void onSnapshot(const ReconciliationSnapshot& snapshot) override {
-    (void)snapshot;
+    std::lock_guard<std::mutex> lock(reconMutex);
+    if (!snapshot.orders.empty()) {
+      reconOrders = snapshot.orders;
+    }
+    if (!snapshot.trades.empty()) {
+      reconTrades = snapshot.trades;
+    }
   }
 
   void publishSession() {
-    const bool ready = trader.state() == SessionState::Ready;
+    const bool traderReady = trader.state() == SessionState::Ready;
+    const bool reconnecting = reconciling.load(std::memory_order_relaxed);
+    const bool ready = traderReady && !reconnecting;
     VenueSessionEvent session;
     session.tradingDay = trader.tradingDay();
-    session.loginState = ready ? csbe::GatewayState::UP : csbe::GatewayState::CONNECTING;
-    session.settlementState = ready ? csbe::SettlementState::SETTLED
-                                    : csbe::SettlementState::NONE;
+    session.loginState = traderReady ? csbe::GatewayState::UP : csbe::GatewayState::DOWN;
+    session.settlementState = traderReady ? csbe::SettlementState::SETTLED
+                                          : csbe::SettlementState::NONE;
     session.adapterSessionId = runtimeConfig.orsId;
-    session.state = ready ? csbe::VenueSessionState::READY
-                          : csbe::VenueSessionState::STARTING;
-    session.reason = ready ? "" : trader.lastError();
+    session.state = reconnecting ? csbe::VenueSessionState::LOST
+                                 : (ready ? csbe::VenueSessionState::READY
+                                          : csbe::VenueSessionState::STARTING);
+    session.reason = reconnecting ? "reconnect reconciliation pending"
+                                  : (ready ? "" : trader.lastError());
     session.snapshotTimestamp = nowNanos();
     session.lastSeqByStream = {
         {static_cast<std::uint32_t>(runtimeConfig.streams.execution), adapter.sequence()},
@@ -111,6 +155,75 @@ struct ContractRuntime::Impl final : ExecutionSink, SnapshotSink {
     };
     std::lock_guard<std::mutex> lock(sinkMutex);
     sink.publishSession(session);
+  }
+
+  void beginReconnect() {
+    if (reconciling.exchange(true)) return;
+    const std::uint64_t epoch = currentEpoch.fetch_add(1) + 1;
+    {
+      std::lock_guard<std::mutex> lock(sinkMutex);
+      sink.setSourcePublicationEpoch(epoch);
+    }
+    {
+      std::lock_guard<std::mutex> lock(reconMutex);
+      reconciler.onReconnect();
+      reconOrders.clear();
+      reconTrades.clear();
+      reconPositions.clear();
+      reconOrdersReady = false;
+      reconTradesReady = false;
+      reconPositionsReady = false;
+    }
+    std::cerr << "runtime reconnecting epoch=" << epoch << '\n';
+    publishSession();
+  }
+
+  bool finishReconciliation() {
+    std::vector<OrderSnapshot> orders;
+    std::vector<TradeSnapshot> trades;
+    std::vector<PositionSnapshot> positions;
+    {
+      std::lock_guard<std::mutex> lock(reconMutex);
+      if (!reconOrdersReady || !reconTradesReady || !reconPositionsReady) return false;
+      orders = reconOrders;
+      trades = reconTrades;
+      positions = reconPositions;
+      reconciler.reconcile(orders, trades, positions);
+      reconOrdersReady = false;
+      reconTradesReady = false;
+      reconPositionsReady = false;
+    }
+    reconciling.store(false, std::memory_order_relaxed);
+    std::cerr << "runtime reconciliation complete epoch="
+              << currentEpoch.load(std::memory_order_relaxed) << '\n';
+    publishSession();
+    return true;
+  }
+
+  void queryReconciliation() {
+    {
+      std::lock_guard<std::mutex> lock(reconMutex);
+      reconOrders.clear();
+      reconTrades.clear();
+      reconPositions.clear();
+      reconOrdersReady = false;
+      reconTradesReady = false;
+      reconPositionsReady = false;
+    }
+    const bool ordersOk = queries.queryOrders();
+    const bool tradesOk = queries.queryTrades();
+    const bool positionsOk = queries.queryPositions();
+    {
+      std::lock_guard<std::mutex> lock(reconMutex);
+      reconOrdersReady = ordersOk;
+      reconTradesReady = tradesOk;
+      reconPositionsReady = positionsOk;
+    }
+    if (!ordersOk || !tradesOk || !positionsOk) {
+      std::cerr << "runtime reconciliation query failed: " << queries.lastError() << '\n';
+      return;
+    }
+    finishReconciliation();
   }
 
   int run() {
@@ -141,25 +254,57 @@ struct ContractRuntime::Impl final : ExecutionSink, SnapshotSink {
               << " streams=" << runtimeConfig.streams.execution
               << "," << runtimeConfig.streams.marketData << '\n';
     publishSession();
+    lastTraderState = trader.state();
     std::thread queryThread([this] {
       while (!stopping.load(std::memory_order_relaxed)
              && !stopRequested.load(std::memory_order_relaxed)) {
         if (trader.state() == SessionState::Ready) {
-          queries.queryAccount();
-          queries.queryPositions();
+          if (reconciling.load(std::memory_order_relaxed)) {
+            queryReconciliation();
+          } else {
+            queries.queryAccount();
+            queries.queryPositions();
+          }
         }
         std::this_thread::sleep_for(std::chrono::seconds(runtimeConfig.queryIntervalSeconds));
       }
     });
     auto lastSessionAt = std::chrono::steady_clock::now();
     while (!stopRequested.load(std::memory_order_relaxed)) {
+      const SessionState traderState = trader.state();
+      if (traderState != lastTraderState) {
+        if (!reconciling.load(std::memory_order_relaxed)
+            && traderState != SessionState::Ready
+            && lastTraderState == SessionState::Ready) {
+          beginReconnect();
+        }
+        lastTraderState = traderState;
+      }
+
       commands.poll(10,
           [this](const OrderRequest& request) {
+            if (reconciling.load(std::memory_order_relaxed)) {
+              adapter.rejectOrderRequest(request, "reconnect reconciliation pending");
+              return;
+            }
+            bool allowed = false;
+            {
+              std::lock_guard<std::mutex> lock(reconMutex);
+              allowed = reconciler.canSubmit(request.orderRef);
+            }
+            if (!allowed) {
+              adapter.rejectOrderRequest(request, "orderRef reconciliation pending");
+              return;
+            }
             if (!adapter.onOrderRequest(request)) {
               std::cerr << "runtime order rejected: " << adapter.lastError() << '\n';
             }
           },
           [this](const CancelRequest& request) {
+            if (reconciling.load(std::memory_order_relaxed)) {
+              adapter.rejectCancelRequest(request, "reconnect reconciliation pending");
+              return;
+            }
             if (!adapter.onCancelRequest(request)) {
               std::cerr << "runtime cancel rejected: " << adapter.lastError() << '\n';
             }

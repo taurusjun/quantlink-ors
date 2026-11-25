@@ -156,6 +156,10 @@ bool ContractSink::publishPositionSnapshot(const PositionSnapshot& snapshot) {
   return publishFrame(context_.streams.position, message.encodedLength() + sbe::MessageHeader::encodedLength());
 }
 
+void ContractSink::setSourcePublicationEpoch(std::uint64_t epoch) {
+  context_.sourcePublicationEpoch = epoch;
+}
+
 bool ContractSink::publishSession(const VenueSessionEvent& session) {
   sbe::VenueSession message;
   message.wrapAndApplyHeader(buffer_.get(), 0, bufferSize_)

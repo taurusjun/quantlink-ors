@@ -217,6 +217,14 @@ struct CtpAdapter::Impl {
     return true;
   }
 
+  bool rejectOrderRequest(const OrderRequest& request, const std::string& reason) {
+    return reject(request, reason);
+  }
+
+  bool rejectCancelRequest(const CancelRequest& request, const std::string& reason) {
+    return rejectCancel(request.orderRef, stateOf(request.orderRef), reason);
+  }
+
   bool onCancelRequest(const CancelRequest& request) {
     OrderState state;
     bool known = false;
@@ -815,6 +823,14 @@ bool CtpAdapter::onOrderRequest(const OrderRequest& request) {
 
 bool CtpAdapter::onCancelRequest(const CancelRequest& request) {
   return impl_->onCancelRequest(request);
+}
+
+bool CtpAdapter::rejectOrderRequest(const OrderRequest& request, const std::string& reason) {
+  return impl_->rejectOrderRequest(request, reason);
+}
+
+bool CtpAdapter::rejectCancelRequest(const CancelRequest& request, const std::string& reason) {
+  return impl_->rejectCancelRequest(request, reason);
 }
 
 bool CtpAdapter::onModifyRequest(const ModifyRequest& request) {

@@ -8,6 +8,10 @@ namespace ors::ctp {
 
 CtpReconciler::CtpReconciler() = default;
 
+void CtpReconciler::setEpoch(std::uint64_t epoch) {
+  if (epoch > 0) epoch_ = epoch;
+}
+
 void CtpReconciler::onReconnect() {
   ++epoch_;
   for (auto& [orderRef, state] : states_) {

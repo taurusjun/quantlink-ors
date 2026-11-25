@@ -18,6 +18,9 @@ class CtpReconciler {
 
   CtpReconciler();
 
+  /// Sets the epoch for a fresh runtime start.
+  void setEpoch(std::uint64_t epoch);
+
   /// Starts a new epoch. Open orders become UNKNOWN until the query returns.
   void onReconnect();
 
