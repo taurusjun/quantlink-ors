@@ -219,6 +219,72 @@ cycle 3: block 120s -> reconciliation complete epoch=4
 
 Each cycle returned READY; no iptables rules or runtime process remained.
 
+## 7.1 Residual risk assessment (accepted temporarily)
+
+The following two gaps are deliberately **not fixed** for the current SimNow/test
+phase. They must be reassessed before any live-money deployment.
+
+### R1. Old CTP callbacks can be stamped with the new epoch
+
+Current runtime behavior:
+
+```text
+ContractRuntime::onOrderUpdate/onTrade
+  -> always writes currentEpoch into sourcePublicationEpoch
+  -> CtpReconciler.observe sees a current-epoch event
+```
+
+If the CTP SDK delivers an old-session order/trade callback after reconnect, it
+will not be recognised as stale. A stale `FILLED` or `Trade` could therefore be
+counted again by L2.
+
+Risk judgment:
+
+```text
+Trigger probability: low/unknown
+  No evidence yet that the CTP SDK replays old-front callbacks after reconnect;
+  this must be confirmed against the SDK or a packet/callback capture.
+
+Impact if triggered: medium-high
+  Wrong order state or duplicate fill accounting at L2. Duplicate order
+  submission is still blocked by CtpAdapter's orderRef map.
+
+Overall: medium live risk, not acceptable as a long-term production posture.
+Current SimNow/test phase: accepted temporarily.
+```
+
+Required before live money:
+
+```text
+stamp callbacks with a CTP connection generation or verify FrontID/SessionID,
+and make runtime preserve/ignore the event epoch instead of overwriting it.
+```
+
+### R2. Runtime canSubmit is not independently observed live
+
+Current live duplicate test was rejected by `CtpAdapter`'s orderRef map before
+the runtime `canSubmit` gate. The gate itself has unit coverage
+(`CtpReconcilerTest`), but its runtime wiring is not separately exercised.
+
+Risk judgment:
+
+```text
+Trigger probability: low
+Impact if bypassed: low
+  The adapter map is the stricter second line of defence and still prevents a
+  duplicate orderRef from reaching CTP.
+
+Overall: defence-in-depth gap, not an immediate duplicate-order hole.
+Current SimNow/test phase: accepted temporarily.
+```
+
+To close it later:
+
+```text
+add a test-only seam that removes/bypasses the adapter map while keeping the
+reconciler OPEN/UNKNOWN, then assert the runtime emits a local REJECTED.
+```
+
 ## 7. Known gaps
 
 ```text

@@ -263,6 +263,10 @@ stream IDs             由 --stream-base 整组配置
 的 OrderUpdate/Trade 必须丢弃。runtime 已接入 `CtpReconciler`：断线发布 LOST，
 重连后查询 orders/trades/positions 对账，对账完成再发布 READY。
 
+已知残余风险（当前 SimNow 阶段暂时接受，实盘前必须处理）：runtime 目前会把
+CTP 回调统一盖成当前 epoch，若 SDK 在重连后仍投递旧 front 回报，旧 FILLED/Trade
+可能被当成新事件。详见 `docs/2026-11-24-ctp-acceptance.md` §7.1。
+
 ## 7. 订单与 ID
 
 CTP 字段：
