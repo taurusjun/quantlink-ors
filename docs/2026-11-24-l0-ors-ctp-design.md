@@ -181,7 +181,8 @@ CTP -> L0 字段映射
 账户路由
 GUI
 PnL 计算
-SHFE/INE 平今/平昨的拆分与选择（由 L2 ExecutionOffsetPolicy 解析后只传最终 offsetFlag）
+STP（自成交检查）
+SHFE/INE 平今/平昨的选择（由 L2 解析后只传最终 offsetFlag；L2 不拆单）
 ```
 
 ### `contract`
