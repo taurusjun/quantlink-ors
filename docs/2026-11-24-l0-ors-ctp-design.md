@@ -307,6 +307,15 @@ exchange     string
 5. 重连后按 OrderRef/FrontID/SessionID 查询对账
 ```
 
+CTP 的 `OrderSysID` / `TradeID` 是固定宽度 `char` 数组，实际值可能出现前导空格
+（例如 `"      102465"`）。L0 映射时去掉前后空格，contract 中只保留实际 ID。
+
+L0 不设置“空 `tradeId` 直接丢弃”的分支。`TradeID` 是 CTP `OnRtnTrade` 的成交编号，
+正常必填；空值属于柜台/API 异常。静默丢成交会掩盖问题，因此保留原值交给契约/
+下游显式失败。L0 也不按 `tradeId` 去重：CTP 私流按 at-most-once 处理，ORS 没有
+Aeron Archive/replay；如果未来引入重放，由 L2 按契约唯一键
+`(venueId, accountId, tradingDay, tradeId)` 做幂等。
+
 ### 7.1 平今/平昨（offsetFlag）
 
 CTP ORS 只做最终 `offsetFlag` 的 1:1 映射，不判断交易所，不拆分，不改写：

@@ -94,6 +94,33 @@ ReqOrderAction -> OnRtnOrder(CANCELED)
 OnRtnTrade -> Trade
 ```
 
+## 5.1 Live lifecycle re-run after replay cleanup
+
+After removing L0 trade deduplication and the empty-`tradeId` drop path, both
+order lifecycles were re-run on the 2026-11-25 night session:
+
+```text
+cancel path:
+  NEW -> ACK (sysId=170724) -> CANCELED
+  no Trade, no padded IDs
+
+fill path:
+  NEW -> Trade id=103244 price=741.48 qty=1
+  -> FILLED (sysId=171097)
+  no padded IDs
+```
+
+A follow-up query confirmed the fills and the current position:
+
+```text
+position au2612 long=18 todayLong=2 short=0
+trades: id=102465 price=740.0, id=103244 price=741.48
+```
+
+This also confirmed that CTP's fixed-width `TradeID` / `OrderSysID` fields are
+trimmed before entering the contract; the earlier live run exposed leading
+spaces (`"      102465"`).
+
 ## 6. L1 runtime wiring (CTP ORS -> FastTrade AccessClient)
 
 Implemented:
