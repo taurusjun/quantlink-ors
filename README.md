@@ -49,6 +49,19 @@ CLOSE 在 SHFE/INE 表示平昨，平今必须显式 CLOSE_TODAY。
 非 SHFE/INE 的显式平今/平昨由 L2 拒绝，CTP ORS 不改写、不猜。
 ```
 
+重连稳定性脚本（需要 root 和 iptables；参数化 CTP front/配置，不打印凭据）：
+
+```bash
+./tools/reconnect_stability.sh \
+  --config /opt/quantlink-fin/run/ors-simnow.cfg \
+  --front 182.254.243.31 \
+  --instruments au2612 \
+  --cycles 3 --block-seconds 120
+```
+
+每个 cycle 会短时阻断 CTP front，要求 runtime 重新出现 `reconciliation complete`，
+结果写到 `/tmp/ors-reconnect-stability.log`。
+
 原则：
 
 ```text
