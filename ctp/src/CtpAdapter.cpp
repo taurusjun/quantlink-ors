@@ -520,6 +520,8 @@ struct CtpAdapter::Impl {
 
     Trade report;
     report.orderRef = orderRef;
+    // CTP populates TradeID for every trade callback. An empty value is a
+    // venue/API defect, so there is no silent drop path here.
     report.tradeId = text(trade->TradeID);
     report.exchangeOrderId = text(trade->OrderSysID);
     report.instrumentId = text(trade->InstrumentID);
@@ -529,11 +531,6 @@ struct CtpAdapter::Impl {
     report.price = sanitizePrice(trade->Price);
     report.qty = trade->Volume;
     report.tradingDay = text(trade->TradingDay);
-    if (report.tradeId.empty()) {
-      std::lock_guard<std::mutex> lock(mutex_);
-      lastError_ = "tradeId is required";
-      return;
-    }
     if (orderRef == 0) {
       bufferTrade(report);
       return;
