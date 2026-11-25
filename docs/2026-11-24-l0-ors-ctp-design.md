@@ -181,6 +181,8 @@ CTP -> L0 字段映射
 账户路由
 GUI
 PnL 计算
+STP（自成交检查）
+SHFE/INE 平今/平昨的选择（由 L2 解析后只传最终 offsetFlag；L2 不拆单）
 ```
 
 ### `contract`
@@ -250,6 +252,22 @@ OnFrontDisconnected
 
 ---
 
+### 6.3 sourceSessionId / sourcePublicationEpoch / stream IDs
+
+```text
+sourceSessionId        runtime 启动标识；未配置时自动生成
+sourcePublicationEpoch  同一 runtime 的发布代数；默认 1
+stream IDs             由 --stream-base 整组配置
+```
+
+真实重连时必须递增 `sourcePublicationEpoch` 并重新发布 `VenueSession`；旧 epoch
+的 OrderUpdate/Trade 必须丢弃。runtime 已接入 `CtpReconciler`：断线发布 LOST，
+重连后查询 orders/trades/positions 对账，对账完成再发布 READY。
+
+已知残余风险（当前 SimNow 阶段暂时接受，实盘前必须处理）：runtime 目前会把
+CTP 回调统一盖成当前 epoch，若 SDK 在重连后仍投递旧 front 回报，旧 FILLED/Trade
+可能被当成新事件。详见 `docs/2026-11-24-ctp-acceptance.md` §7.1。
+
 ## 7. 订单与 ID
 
 CTP 字段：
@@ -282,6 +300,31 @@ exchange     string
 4. 超出 12 位或非法 orderRef 直接拒绝
 5. 重连后按 OrderRef/FrontID/SessionID 查询对账
 ```
+
+### 7.1 平今/平昨（offsetFlag）
+
+CTP ORS 只做最终 `offsetFlag` 的 1:1 映射，不判断交易所，不拆分，不改写：
+
+```text
+OPEN              -> THOST_FTDC_OF_Open
+CLOSE             -> THOST_FTDC_OF_Close
+CLOSE_TODAY       -> THOST_FTDC_OF_CloseToday
+CLOSE_YESTERDAY   -> THOST_FTDC_OF_CloseYesterday
+```
+
+SHFE/INE 的语义由 L2 决定：
+
+```text
+CLOSE 在 SHFE/INE 表示平昨；平今必须显式 CLOSE_TODAY。
+只发 CLOSE 可能静默平掉昨仓，也可能因昨仓不足被 CTP 拒绝（错误码 51）。
+CTP error 51 只作为失败回报，不能反过来驱动 ORS 猜 split。
+```
+
+非 SHFE/INE 交易所的显式 `CLOSE_TODAY` / `CLOSE_YESTERDAY` 由 L2 拒绝；
+CTP ORS 不替 L2 做交易所规则校验，也不把 `CLOSE_TODAY` 改写成 `CLOSE`。
+
+成交回报的 `ExchangeID` 可能为空：`CtpAdapter` 用该笔订单的逐单 exchange 兜底，
+runtime 不使用全局配置 exchange，避免多交易所账户把成交标错。
 
 CTP 头文件里有 `THOST_FTDC_AF_Modify` 常量，但当前 CTP API 文档明确：
 
@@ -361,6 +404,8 @@ PositionSnapshot
 ```text
 accountId = CTP InvestorID / ORS venue account
 snapshotId / snapshotTimestamp / staleAfterMs 必须完整
+snapshotTimestamp 使用 epoch nanoseconds；staleAfterMs 使用毫秒
+sourceSessionId 默认每次启动生成；sourcePublicationEpoch 可配置，重连时递增
 查询失败 -> session DEGRADED，不伪造空快照
 快照过期 -> 消费方按 staleAfterMs 判断
 ```

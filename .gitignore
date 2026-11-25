@@ -15,3 +15,5 @@ logs/
 *.local.cfg
 *.secret
 .env
+
+.superpowers/
