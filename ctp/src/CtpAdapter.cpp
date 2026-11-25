@@ -4,6 +4,7 @@
 
 #include <ThostFtdcTraderApi.h>
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
@@ -12,6 +13,7 @@
 #include <mutex>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 
 namespace ors::ctp {
@@ -182,6 +184,7 @@ struct CtpAdapter::Impl {
   Impl& operator=(const Impl&) = delete;
 
   bool onOrderRequest(const OrderRequest& request) {
+    resetTradingDay(session_.tradingDay());
     std::string error;
     if (!validate(request, error)) {
       return reject(request, error);
@@ -229,6 +232,7 @@ struct CtpAdapter::Impl {
   }
 
   bool onCancelRequest(const CancelRequest& request) {
+    resetTradingDay(session_.tradingDay());
     OrderState state;
     bool known = false;
     {
@@ -291,6 +295,22 @@ struct CtpAdapter::Impl {
     sink_ = sink;
   }
 
+  void resetTradingDay(const std::string& tradingDay) {
+    if (tradingDay.empty()) {
+      return;
+    }
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!trackingTradingDay_.empty() && tradingDay <= trackingTradingDay_) {
+      return;
+    }
+    orders_.clear();
+    refs_.clear();
+    seenTradeIds_.clear();
+    pendingUpdates_.clear();
+    pendingTrades_.clear();
+    trackingTradingDay_ = tradingDay;
+  }
+
   std::string lastError() const {
     std::lock_guard<std::mutex> lock(mutex_);
     return lastError_;
@@ -319,6 +339,7 @@ struct CtpAdapter::Impl {
     if (order == nullptr || info == nullptr) {
       return;
     }
+    resetTradingDay(session_.tradingDay());
     const std::uint64_t orderRef = resolve(text(order->OrderRef), 0, 0);
     OrderUpdate update;
     update.orderRef = orderRef;
@@ -346,6 +367,7 @@ struct CtpAdapter::Impl {
     if (action == nullptr || info == nullptr || info->ErrorID == 0) {
       return;
     }
+    resetTradingDay(session_.tradingDay());
     const std::uint64_t orderRef =
         resolve(text(action->OrderRef), action->FrontID, action->SessionID);
     if (orderRef == 0) {
@@ -361,6 +383,7 @@ struct CtpAdapter::Impl {
     if (action == nullptr || info == nullptr || info->ErrorID == 0) {
       return;
     }
+    resetTradingDay(session_.tradingDay());
     const std::uint64_t orderRef =
         resolve(text(action->OrderRef), action->FrontID, action->SessionID);
     if (orderRef == 0) {
@@ -375,6 +398,7 @@ struct CtpAdapter::Impl {
     if (order == nullptr) {
       return;
     }
+    resetTradingDay(session_.tradingDay());
     const std::string ctpRef = text(order->OrderRef);
     const int frontId = order->FrontID;
     const int sessionId = order->SessionID;
@@ -436,7 +460,14 @@ struct CtpAdapter::Impl {
         state.sessionId = sessionId;
       }
       bool publishUpdate = false;
-      if (order->OrderSubmitStatus == THOST_FTDC_OSS_InsertRejected) {
+      if (order->OrderSubmitStatus == THOST_FTDC_OSS_CancelRejected) {
+        // The cancel failed; the order is still working. Handle this before
+        // the Canceled/Filled mapping, which would otherwise make it terminal.
+        state.cancelRequested = false;
+        state.ackPublished = true;
+        state.status = state.tradeFilledQty > 0 ? OrderStatus::Partial : OrderStatus::Ack;
+        publishUpdate = true;
+      } else if (order->OrderSubmitStatus == THOST_FTDC_OSS_InsertRejected) {
         state.status = OrderStatus::Rejected;
         state.terminal = true;
         publishUpdate = true;
@@ -482,6 +513,7 @@ struct CtpAdapter::Impl {
     if (trade == nullptr) {
       return;
     }
+    resetTradingDay(session_.tradingDay());
     const std::uint64_t orderRef = resolve(text(trade->OrderRef), 0, 0);
 
     Trade report;
@@ -495,31 +527,52 @@ struct CtpAdapter::Impl {
     report.price = sanitizePrice(trade->Price);
     report.qty = trade->Volume;
     report.tradingDay = text(trade->TradingDay);
+    if (report.tradeId.empty()) {
+      std::lock_guard<std::mutex> lock(mutex_);
+      lastError_ = "tradeId is required";
+      return;
+    }
     if (orderRef == 0) {
       bufferTrade(report);
       return;
     }
-    std::string orderExchange;
+    const std::string tradeDay =
+        report.tradingDay.empty() ? session_.tradingDay() : report.tradingDay;
     bool publishUpdate = false;
+    bool knownOrder = true;
     {
       std::lock_guard<std::mutex> lock(mutex_);
-      OrderState& state = orders_[orderRef];
-      state.tradeFilledQty += report.qty;
-      state.filledQty = std::max(state.filledQty, state.tradeFilledQty);
-      state.filledNotional += report.price * report.qty;
-      orderExchange = state.exchange;
-      if (report.requestId.empty()) report.requestId = state.requestId;
-      if (!state.terminal) {
-        if (state.orderQty > 0 && state.tradeFilledQty >= state.orderQty) {
-          state.status = OrderStatus::Filled;
-          state.terminal = true;
-        } else {
-          state.status = OrderStatus::Partial;
+      const auto found = orders_.find(orderRef);
+      if (found == orders_.end()) {
+        knownOrder = false;
+      } else {
+        OrderState& state = found->second;
+        const std::string tradeKey = tradeDay + "|" + report.tradeId;
+        if (!seenTradeIds_.insert(tradeKey).second) {
+          return;
         }
-        publishUpdate = true;
+        if (report.exchange.empty()) {
+          report.exchange = state.exchange;
+        }
+        state.tradeFilledQty += report.qty;
+        state.filledQty = std::max(state.filledQty, state.tradeFilledQty);
+        state.filledNotional += report.price * report.qty;
+        if (report.requestId.empty()) report.requestId = state.requestId;
+        if (!state.terminal) {
+          if (state.orderQty > 0 && state.tradeFilledQty >= state.orderQty) {
+            state.status = OrderStatus::Filled;
+            state.terminal = true;
+          } else {
+            state.status = OrderStatus::Partial;
+          }
+          publishUpdate = true;
+        }
       }
     }
-    if (report.exchange.empty()) report.exchange = orderExchange;
+    if (!knownOrder) {
+      bufferTrade(report);
+      return;
+    }
 
     // Trade first, then the order status; FILLED must not arrive before Trade.
     publishTrade(report);
@@ -850,6 +903,8 @@ struct CtpAdapter::Impl {
   mutable std::mutex mutex_;
   CtpOrderRefMap refs_;
   std::unordered_map<std::uint64_t, OrderState> orders_;
+  std::unordered_set<std::string> seenTradeIds_;
+  std::string trackingTradingDay_;
   std::vector<OrderUpdate> pendingUpdates_;
   std::vector<Trade> pendingTrades_;
   std::uint64_t sequence_{0};
@@ -887,6 +942,10 @@ bool CtpAdapter::onModifyRequest(const ModifyRequest& request) {
 }
 
 void CtpAdapter::setSink(ExecutionSink* sink) { impl_->setSink(sink); }
+
+void CtpAdapter::resetTradingDay(const std::string& tradingDay) {
+  impl_->resetTradingDay(tradingDay);
+}
 
 std::string CtpAdapter::lastError() const { return impl_->lastError(); }
 

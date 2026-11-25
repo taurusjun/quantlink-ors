@@ -195,6 +195,10 @@ class CtpAdapter {
   bool onOrderRequest(const OrderRequest& request);
   bool onCancelRequest(const CancelRequest& request);
 
+  /// Clears order/ref state when the trading day changes. Old-day orders are
+  /// no longer actionable, so they must not keep the maps alive all day.
+  void resetTradingDay(const std::string& tradingDay);
+
   /// Publishes a local REJECTED without sending to CTP. Used by the runtime
   /// while reconnect reconciliation is pending.
   bool rejectOrderRequest(const OrderRequest& request, const std::string& reason);

@@ -321,6 +321,28 @@ void checkCancelReport() {
         "the report keeps the cancel state");
 }
 
+void checkCancelRejectedOnOrderReturn() {
+  Fixture fixture;
+  check(fixture.adapter.onOrderRequest(baseRequest(7)), "the order is accepted");
+  auto ack = orderRow("7", 3, 400, THOST_FTDC_OST_NoTradeQueueing, 0, 2);
+  fixture.adapter.OnRtnOrder(&ack);
+  check(fixture.adapter.onCancelRequest(cancelFor(7)), "the cancel is accepted");
+  const std::size_t before = fixture.recorder.updates.size();
+
+  auto rejected = orderRow("7", 3, 400, THOST_FTDC_OST_Canceled, 0, 2);
+  rejected.OrderSubmitStatus = THOST_FTDC_OSS_CancelRejected;
+  fixture.adapter.OnRtnOrder(&rejected);
+
+  check(fixture.recorder.updates.size() == before + 1,
+        "a CancelRejected venue row publishes a result");
+  check(fixture.recorder.last().cancelState == CancelState::Rejected,
+        "CancelRejected is reported even when the row says Canceled");
+  check(fixture.recorder.last().status == OrderStatus::Ack,
+        "a rejected cancel leaves the order working, not terminal");
+  check(fixture.adapter.onCancelRequest(cancelFor(7)),
+        "the order can be cancelled again after the rejection");
+}
+
 void checkCancelRejected() {
   Fixture fixture;
   check(fixture.adapter.onOrderRequest(baseRequest(7)), "the order is accepted");
@@ -537,6 +559,78 @@ void checkTradeExchangeFallback() {
   check(fixture.recorder.trades.size() == 1, "the trade is published");
   check(fixture.recorder.trades.front().exchange == "SHFE",
         "the trade exchange falls back to the order state");
+
+  setText(tradeRow.ExchangeID, "SHFE");
+  fixture.adapter.OnRtnTrade(&tradeRow);
+  check(fixture.recorder.trades.size() == 1,
+        "the same tradeId is deduplicated even when exchange arrives later");
+}
+
+void checkDuplicateTradeIgnored() {
+  Fixture fixture;
+  check(fixture.adapter.onOrderRequest(baseRequest(7)), "the order is accepted");
+  auto ack = orderRow("7", 3, 400, THOST_FTDC_OST_NoTradeQueueing, 0, 2);
+  fixture.adapter.OnRtnOrder(&ack);
+
+  auto tradeRow = zeroed<CThostFtdcTradeField>();
+  setText(tradeRow.OrderRef, "7");
+  setText(tradeRow.TradeID, "T1");
+  setText(tradeRow.InstrumentID, "au2612");
+  setText(tradeRow.ExchangeID, "SHFE");
+  setText(tradeRow.TradingDay, "20261124");
+  tradeRow.Direction = THOST_FTDC_D_Buy;
+  tradeRow.OffsetFlag = THOST_FTDC_OF_Open;
+  tradeRow.Price = 501.0;
+  tradeRow.Volume = 1;
+
+  fixture.adapter.OnRtnTrade(&tradeRow);
+  const std::size_t tradesAfterFirst = fixture.recorder.trades.size();
+  const std::size_t updatesAfterFirst = fixture.recorder.updates.size();
+  fixture.adapter.OnRtnTrade(&tradeRow);
+
+  check(fixture.recorder.trades.size() == tradesAfterFirst,
+        "a duplicate tradeId is not published twice");
+  check(fixture.recorder.updates.size() == updatesAfterFirst,
+        "a duplicate trade does not republish the order");
+
+  auto partial = orderRow("7", 3, 400, THOST_FTDC_OST_PartTradedQueueing, 1, 2);
+  fixture.adapter.OnRtnOrder(&partial);
+  check(fixture.recorder.last().filledQty == 1,
+        "a duplicate trade is not added to the filled quantity");
+}
+
+void checkEmptyTradeIdIgnored() {
+  Fixture fixture;
+  check(fixture.adapter.onOrderRequest(baseRequest(7)), "the order is accepted");
+  auto ack = orderRow("7", 3, 400, THOST_FTDC_OST_NoTradeQueueing, 0, 2);
+  fixture.adapter.OnRtnOrder(&ack);
+
+  auto tradeRow = zeroed<CThostFtdcTradeField>();
+  setText(tradeRow.OrderRef, "7");
+  setText(tradeRow.InstrumentID, "au2612");
+  tradeRow.Direction = THOST_FTDC_D_Buy;
+  tradeRow.OffsetFlag = THOST_FTDC_OF_Open;
+  tradeRow.Price = 500.0;
+  tradeRow.Volume = 1;
+  fixture.adapter.OnRtnTrade(&tradeRow);
+
+  check(fixture.recorder.trades.empty(), "a trade with no tradeId is not published");
+  check(fixture.adapter.lastError().find("tradeId") != std::string::npos,
+        "the missing tradeId is reported");
+}
+
+void checkTradingDayResetsOrderState() {
+  Fixture fixture;
+  check(fixture.adapter.onOrderRequest(baseRequest(7)), "the first order is accepted");
+  auto ack = orderRow("7", 3, 400, THOST_FTDC_OST_NoTradeQueueing, 0, 2);
+  fixture.adapter.OnRtnOrder(&ack);
+  auto canceled = orderRow("7", 3, 400, THOST_FTDC_OST_Canceled, 0, 2);
+  fixture.adapter.OnRtnOrder(&canceled);
+
+  fixture.adapter.resetTradingDay("20261125");
+  check(fixture.adapter.onOrderRequest(baseRequest(7)),
+        "an old-day orderRef can be reused after the trading day changes");
+  check(fixture.sender.inserts == 2, "the new-day order reaches CTP");
 }
 
 void checkTradeAndAveragePrice() {
@@ -604,6 +698,7 @@ int main() {
   checkCancelAccepted();
   checkCancelReport();
   checkCancelRejected();
+  checkCancelRejectedOnOrderReturn();
   checkRejectCancelRequest();
   checkCancelBeforeAck();
   checkInsertRejectedByCtp();
@@ -614,6 +709,9 @@ int main() {
   checkUnknownReportsAreBuffered();
   checkModifyRejected();
   checkTradeExchangeFallback();
+  checkDuplicateTradeIgnored();
+  checkEmptyTradeIdIgnored();
+  checkTradingDayResetsOrderState();
   checkTradeAndAveragePrice();
 
   if (failures != 0) {
