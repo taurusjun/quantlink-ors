@@ -51,6 +51,10 @@ add_executable(ors_ctp src/main.cpp)
 target_link_libraries(ors_ctp PRIVATE ors_ctp_core ors_aeron CTP::trader CTP::md
     "${AERON_LIB}" Threads::Threads ${CMAKE_DL_LIBS} rt)
 
+# Smoke tools are deliberately separate from the production runtime binary.
+add_executable(ors_ctp_smoke src/smoke/SmokeMain.cpp)
+target_link_libraries(ors_ctp_smoke PRIVATE ors_ctp_core CTP::trader CTP::md)
+
 add_executable(ctp_text_encoding_test tests/TextEncodingTest.cpp)
 target_link_libraries(ctp_text_encoding_test PRIVATE ors_ctp_core)
 add_test(NAME ctp_text_encoding COMMAND ctp_text_encoding_test)
@@ -82,12 +86,12 @@ add_test(NAME ctp_link_smoke COMMAND ors_ctp)
 
 # The md-smoke mode is reachable in the shipped binary: without --config it
 # stops at its argument check instead of doing anything on the network.
-add_test(NAME ctp_md_mode_wired COMMAND ors_ctp --mode md-smoke)
+add_test(NAME ctp_md_mode_wired COMMAND ors_ctp_smoke --mode md-smoke)
 set_tests_properties(ctp_md_mode_wired PROPERTIES
   PASS_REGULAR_EXPRESSION "--config is required for --mode md-smoke")
 
 # Query smoke mode is wired the same way: argument check only, no network.
-add_test(NAME ctp_query_mode_wired COMMAND ors_ctp --mode query-smoke)
+add_test(NAME ctp_query_mode_wired COMMAND ors_ctp_smoke --mode query-smoke)
 set_tests_properties(ctp_query_mode_wired PROPERTIES
   PASS_REGULAR_EXPRESSION "--config is required for --mode query-smoke")
 
@@ -108,11 +112,11 @@ add_test(NAME ctp_reconciler COMMAND ctp_reconciler_test)
 
 # order-smoke is dry-run unless --live, so ctest can reach the mode without a
 # config, a login or an order.
-add_test(NAME ctp_order_mode_wired COMMAND ors_ctp --mode order-smoke --instruments au2612
+add_test(NAME ctp_order_mode_wired COMMAND ors_ctp_smoke --mode order-smoke --instruments au2612
                                            --price 500 --qty 1)
 set_tests_properties(ctp_order_mode_wired PROPERTIES PASS_REGULAR_EXPRESSION "DRY-RUN")
 
-add_test(NAME ctp_order_mode_requires_config COMMAND ors_ctp --mode order-smoke --live
+add_test(NAME ctp_order_mode_requires_config COMMAND ors_ctp_smoke --mode order-smoke --live
                                                    --instruments au2612 --price 500 --qty 1)
 set_tests_properties(ctp_order_mode_requires_config PROPERTIES
   PASS_REGULAR_EXPRESSION "--config is required for --mode order-smoke")
