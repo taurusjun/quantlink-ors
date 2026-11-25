@@ -69,7 +69,7 @@ char ctpOffset(Offset offset) {
     case Offset::CloseToday:
       return THOST_FTDC_OF_CloseToday;
     case Offset::CloseYesterday:
-      return THOST_FTDC_OF_CloseYesterday;
+      return THOST_FTDC_OF_Close;
     case Offset::Open:
     default:
       return THOST_FTDC_OF_Open;
@@ -155,13 +155,16 @@ struct CtpAdapter::Impl {
     Offset offsetFlag{Offset::Open};
     int orderQty{0};
     int filledQty{0};
+    int tradeFilledQty{0};
     double filledNotional{0.0};
     double price{0.0};
     std::string exchangeOrderId;
     int frontId{0};
     int sessionId{0};
     OrderStatus status{OrderStatus::New};
+    bool ackPublished{false};
     bool cancelRequested{false};
+    bool terminal{false};
     std::string requestId;
   };
 
@@ -259,10 +262,6 @@ struct CtpAdapter::Impl {
         found->second.cancelRequested = true;
       }
     }
-
-    OrderUpdate update = fromState(request.orderRef, state);
-    update.cancelState = CancelState::Requested;
-    publish(update);
     return true;
   }
 
@@ -403,16 +402,17 @@ struct CtpAdapter::Impl {
     const std::string exchange = text(order->ExchangeID);
     const std::string tradingDay = text(order->TradingDay);
     const std::string statusMsg = gbkToUtf8(text(order->StatusMsg));
-    const int volumeTraded = order->VolumeTraded;
-    const int volumeTotal = order->VolumeTotal;
     const int volumeOriginal = order->VolumeTotalOriginal;
     const double limitPrice = sanitizePrice(order->LimitPrice);
-    OrderState state;
-    OrderStatus status = mapOrderStatus(order->OrderStatus);
-    CancelState cancelState = CancelState::None;
+    const OrderStatus mapped = mapOrderStatus(order->OrderStatus);
+
+    OrderUpdate update;
     {
       std::lock_guard<std::mutex> lock(mutex_);
-      state = orders_[orderRef];
+      OrderState& state = orders_[orderRef];
+      if (state.terminal) {
+        return;
+      }
       if (state.ctpRef.empty()) {
         state.ctpRef = ctpRef;
       }
@@ -435,27 +435,45 @@ struct CtpAdapter::Impl {
         state.frontId = frontId;
         state.sessionId = sessionId;
       }
+      bool publishUpdate = false;
       if (order->OrderSubmitStatus == THOST_FTDC_OSS_InsertRejected) {
-        status = OrderStatus::Rejected;
+        state.status = OrderStatus::Rejected;
+        state.terminal = true;
+        publishUpdate = true;
+      } else if (mapped == OrderStatus::Canceled) {
+        state.status = OrderStatus::Canceled;
+        state.terminal = true;
+        publishUpdate = true;
+      } else if (mapped == OrderStatus::Filled) {
+        // AllTraded is not the fill event: wait for OnRtnTrade.
+        state.status = state.tradeFilledQty >= state.orderQty ? OrderStatus::Filled
+                                                              : OrderStatus::Partial;
+      } else if (mapped == OrderStatus::Ack || mapped == OrderStatus::Partial) {
+        if (!state.ackPublished && state.filledQty == 0) {
+          state.ackPublished = true;
+          state.status = OrderStatus::Ack;
+          publishUpdate = true;
+        } else {
+          state.ackPublished = true;
+          if (state.filledQty > 0) {
+            state.status = OrderStatus::Partial;
+          }
+        }
       }
-      state.status = status;
-      state.filledQty = volumeTraded;
-      if (order->OrderSubmitStatus == THOST_FTDC_OSS_CancelRejected) {
-        cancelState = CancelState::Rejected;
-      } else if (state.cancelRequested) {
-        cancelState = CancelState::Requested;
-      }
-      orders_[orderRef] = state;
-    }
 
-    OrderUpdate update = fromState(orderRef, state);
-    update.status = status;
-    update.cancelState = cancelState;
-    update.filledQty = volumeTraded;
-    update.remainingQty = volumeTotal;
-    update.reason = statusMsg;
-    if (!tradingDay.empty()) {
-      update.tradingDay = tradingDay;
+      if (!publishUpdate) {
+        return;
+      }
+
+      update = fromState(orderRef, state);
+      update.cancelState = order->OrderSubmitStatus == THOST_FTDC_OSS_CancelRejected
+                               ? CancelState::Rejected
+                               : (state.cancelRequested ? CancelState::Requested
+                                                        : CancelState::None);
+      update.reason = statusMsg;
+      if (!tradingDay.empty()) {
+        update.tradingDay = tradingDay;
+      }
     }
     publish(update);
   }
@@ -482,15 +500,35 @@ struct CtpAdapter::Impl {
       return;
     }
     std::string orderExchange;
+    bool publishUpdate = false;
     {
       std::lock_guard<std::mutex> lock(mutex_);
       OrderState& state = orders_[orderRef];
+      state.tradeFilledQty += report.qty;
+      state.filledQty = std::max(state.filledQty, state.tradeFilledQty);
       state.filledNotional += report.price * report.qty;
       orderExchange = state.exchange;
       if (report.requestId.empty()) report.requestId = state.requestId;
+      if (!state.terminal) {
+        if (state.orderQty > 0 && state.tradeFilledQty >= state.orderQty) {
+          state.status = OrderStatus::Filled;
+          state.terminal = true;
+        } else {
+          state.status = OrderStatus::Partial;
+        }
+        publishUpdate = true;
+      }
     }
     if (report.exchange.empty()) report.exchange = orderExchange;
+
+    // Trade first, then the order status; FILLED must not arrive before Trade.
     publishTrade(report);
+    if (publishUpdate) {
+      const OrderState state = stateOf(orderRef);
+      OrderUpdate update = fromState(orderRef, state);
+      update.cancelState = state.cancelRequested ? CancelState::Requested : CancelState::None;
+      publish(update);
+    }
   }
 
  private:
@@ -545,12 +583,16 @@ struct CtpAdapter::Impl {
     copyField(ctp.InstrumentID, request.instrumentId);
     // CTP infers the exchange from the instrument; SimNow rejects a populated
     // InputOrderField.ExchangeID for ordinary orders.
-    ctp.OrderPriceType = request.orderType == OrderType::Market ? THOST_FTDC_OPT_AnyPrice
-                                                               : THOST_FTDC_OPT_LimitPrice;
     ctp.Direction = ctpDirection(request.side);
     ctp.CombOffsetFlag[0] = ctpOffset(request.offsetFlag);
     ctp.CombHedgeFlag[0] = THOST_FTDC_HF_Speculation;
-    ctp.LimitPrice = request.price;  // any-price ignores it
+    if (request.orderType == OrderType::Market) {
+      ctp.OrderPriceType = THOST_FTDC_OPT_AnyPrice;
+      ctp.LimitPrice = 0;
+    } else {
+      ctp.OrderPriceType = THOST_FTDC_OPT_LimitPrice;
+      ctp.LimitPrice = request.price;
+    }
     ctp.VolumeTotalOriginal = request.qty;
     switch (request.timeInForce) {
       case TimeInForce::Ioc:
@@ -573,6 +615,9 @@ struct CtpAdapter::Impl {
         ctp.TimeCondition = THOST_FTDC_TC_GFD;
         ctp.VolumeCondition = THOST_FTDC_VC_AV;
         ctp.MinVolume = 1;
+        if (request.orderType == OrderType::Market) {
+          ctp.OrderPriceType = THOST_FTDC_OPT_LimitPrice;
+        }
         break;
     }
     ctp.ContingentCondition = THOST_FTDC_CC_Immediately;
@@ -687,6 +732,7 @@ struct CtpAdapter::Impl {
     const auto found = orders_.find(orderRef);
     if (found != orders_.end()) {
       found->second.status = OrderStatus::Rejected;
+      found->second.terminal = true;
     }
   }
 

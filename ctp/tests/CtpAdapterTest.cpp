@@ -242,8 +242,12 @@ void checkTimeInForceMapping() {
   market.orderType = OrderType::Market;
   market.price = 0.0;
   check(fixture.adapter.onOrderRequest(market), "a market order needs no price");
-  check(fixture.sender.lastInsert.OrderPriceType == THOST_FTDC_OPT_AnyPrice,
-        "market maps to any price");
+  check(fixture.sender.lastInsert.OrderPriceType == THOST_FTDC_OPT_LimitPrice,
+        "market DAY keeps the company ORS limit-price type");
+  checkNear(fixture.sender.lastInsert.LimitPrice, 0.0, "market DAY sends price 0");
+  check(fixture.sender.lastInsert.TimeCondition == THOST_FTDC_TC_GFD,
+        "market DAY is good-for-day");
+  check(fixture.sender.lastInsert.MinVolume == 1, "market DAY sets minimum volume 1");
 }
 
 void checkOffsetMapping() {
@@ -257,7 +261,7 @@ void checkOffsetMapping() {
       {Offset::Open, THOST_FTDC_OF_Open, "open"},
       {Offset::Close, THOST_FTDC_OF_Close, "close"},
       {Offset::CloseToday, THOST_FTDC_OF_CloseToday, "close-today"},
-      {Offset::CloseYesterday, THOST_FTDC_OF_CloseYesterday, "close-yesterday"},
+      {Offset::CloseYesterday, THOST_FTDC_OF_Close, "close-yesterday"},
   };
   std::uint64_t orderRef = 20;
   for (const Case& item : cases) {
@@ -270,6 +274,17 @@ void checkOffsetMapping() {
   }
 }
 
+void checkAckOnlyOnce() {
+  Fixture fixture;
+  check(fixture.adapter.onOrderRequest(baseRequest(7)), "the order is accepted");
+  auto ack = orderRow("7", 3, 400, THOST_FTDC_OST_NoTradeQueueing, 0, 2);
+  fixture.adapter.OnRtnOrder(&ack);
+  const std::size_t afterFirstAck = fixture.recorder.updates.size();
+  fixture.adapter.OnRtnOrder(&ack);
+  check(fixture.recorder.updates.size() == afterFirstAck,
+        "a repeated ACK is not published twice");
+}
+
 void checkCancelAccepted() {
   Fixture fixture;
   check(fixture.adapter.onOrderRequest(baseRequest(7)), "the order is accepted");
@@ -278,6 +293,7 @@ void checkCancelAccepted() {
   fixture.adapter.OnRtnOrder(&ack);
   check(fixture.recorder.last().status == OrderStatus::Ack, "the venue ACK is reported");
   check(fixture.recorder.last().exchangeOrderId == "sys-7", "the venue order id is carried");
+  const std::size_t updatesBeforeCancel = fixture.recorder.updates.size();
 
   check(fixture.adapter.onCancelRequest(cancelFor(7)), "the cancel is accepted");
   check(fixture.sender.cancels == 1, "one ReqOrderAction is sent");
@@ -287,8 +303,8 @@ void checkCancelAccepted() {
   check(fieldText(fixture.sender.lastCancel.OrderRef) == "7", "the cancel uses the CTP OrderRef");
   check(fieldText(fixture.sender.lastCancel.InstrumentID) == "au2612",
         "the cancel carries the instrument");
-  check(fixture.recorder.last().cancelState == CancelState::Requested,
-        "a sent cancel is REQUESTED");
+  check(fixture.recorder.updates.size() == updatesBeforeCancel,
+        "a sent cancel does not publish an intermediate update");
 }
 
 void checkCancelReport() {
@@ -559,9 +575,21 @@ void checkTradeAndAveragePrice() {
   check(fixture.recorder.last().filledQty == 1, "the filled quantity is carried");
   check(fixture.recorder.last().remainingQty == 1, "the remaining quantity is carried");
 
-  auto filled = orderRow("7", 3, 400, THOST_FTDC_OST_AllTraded, 2, 2);
-  fixture.adapter.OnRtnOrder(&filled);
+  auto allTraded = orderRow("7", 3, 400, THOST_FTDC_OST_AllTraded, 2, 2);
+  fixture.adapter.OnRtnOrder(&allTraded);
+  check(fixture.recorder.last().status != OrderStatus::Filled,
+        "AllTraded alone does not publish FILLED before the trade");
+
+  auto finalTrade = tradeRow;
+  setText(finalTrade.TradeID, "T2");
+  finalTrade.Price = 502.0;
+  finalTrade.Volume = 1;
+  fixture.adapter.OnRtnTrade(&finalTrade);
+
   check(fixture.recorder.last().status == OrderStatus::Filled, "a full fill is FILLED");
+  check(fixture.recorder.last().filledQty == 2, "the final fill is accumulated");
+  check(fixture.recorder.last().remainingQty == 0, "a filled order has no remaining quantity");
+  checkNear(fixture.recorder.last().avgPrice, 501.5, "avgPrice uses all fills");
   check(!fixture.adapter.onCancelRequest(cancelFor(7)), "a terminal order is not cancelled");
   check(fixture.sender.cancels == 0, "no cancel is sent for a filled order");
 }
@@ -572,6 +600,7 @@ int main() {
   checkInsertAccepted();
   checkTimeInForceMapping();
   checkOffsetMapping();
+  checkAckOnlyOnce();
   checkCancelAccepted();
   checkCancelReport();
   checkCancelRejected();
