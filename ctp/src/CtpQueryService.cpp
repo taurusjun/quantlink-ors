@@ -106,7 +106,7 @@ OrderSnapshot mapOrderSnapshot(const CThostFtdcOrderField& row,
   OrderSnapshot snapshot;
   snapshot.header = header;
   snapshot.orderRef = text(row.OrderRef);
-  snapshot.orderSysId = text(row.OrderSysID);
+  snapshot.orderSysId = trimAsciiSpace(text(row.OrderSysID));
   snapshot.instrumentId = text(row.InstrumentID);
   snapshot.exchange = text(row.ExchangeID);
   snapshot.direction = row.Direction;
@@ -125,9 +125,9 @@ TradeSnapshot mapTradeSnapshot(const CThostFtdcTradeField& row,
                                const SnapshotHeader& header) {
   TradeSnapshot snapshot;
   snapshot.header = header;
-  snapshot.tradeId = text(row.TradeID);
+  snapshot.tradeId = trimAsciiSpace(text(row.TradeID));
   snapshot.orderRef = text(row.OrderRef);
-  snapshot.orderSysId = text(row.OrderSysID);
+  snapshot.orderSysId = trimAsciiSpace(text(row.OrderSysID));
   snapshot.instrumentId = text(row.InstrumentID);
   snapshot.exchange = text(row.ExchangeID);
   snapshot.direction = row.Direction;

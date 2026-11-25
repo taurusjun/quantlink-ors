@@ -173,6 +173,7 @@ void checkOrderAndTradeMapping() {
 
   const auto orderSnapshot = mapOrderSnapshot(order, header);
   check(orderSnapshot.orderRef == "42", "orderRef copied");
+  check(orderSnapshot.orderSysId == "1234", "padded orderSysId is trimmed");
   check(orderSnapshot.instrumentId == "rb2601" && orderSnapshot.exchange == "SHFE",
         "order instrument and exchange copied");
   check(orderSnapshot.direction == THOST_FTDC_D_Buy, "order direction copied");
@@ -187,8 +188,9 @@ void checkOrderAndTradeMapping() {
   check(orderSnapshot.header.snapshotId == header.snapshotId, "order keeps the batch header");
 
   auto trade = zeroed<CThostFtdcTradeField>();
-  setText(trade.TradeID, "T1");
+  setText(trade.TradeID, "      T1");
   setText(trade.OrderRef, "42");
+  setText(trade.OrderSysID, "      99");
   setText(trade.InstrumentID, "rb2601");
   setText(trade.ExchangeID, "SHFE");
   setText(trade.TradeDate, "20261124");
@@ -199,7 +201,8 @@ void checkOrderAndTradeMapping() {
   trade.Price = 3412.5;
 
   const auto tradeSnapshot = mapTradeSnapshot(trade, header);
-  check(tradeSnapshot.tradeId == "T1", "tradeId copied");
+  check(tradeSnapshot.tradeId == "T1", "padded tradeId is trimmed");
+  check(tradeSnapshot.orderSysId == "99", "padded trade orderSysId is trimmed");
   check(tradeSnapshot.orderRef == "42", "trade orderRef copied");
   checkNear(tradeSnapshot.price, 3412.5, "trade price copied");
   check(tradeSnapshot.volume == 2, "trade volume copied");

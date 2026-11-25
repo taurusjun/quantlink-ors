@@ -561,6 +561,36 @@ void checkTradeExchangeFallback() {
         "the trade exchange falls back to the order state");
 }
 
+void checkPaddedVenueIdsTrimmed() {
+  Fixture fixture;
+  check(fixture.adapter.onOrderRequest(baseRequest(7)), "the order is accepted");
+
+  auto ack = orderRow("7", 3, 400, THOST_FTDC_OST_NoTradeQueueing, 0, 2);
+  setText(ack.OrderSysID, "      164235");
+  fixture.adapter.OnRtnOrder(&ack);
+  check(fixture.recorder.last().exchangeOrderId == "164235",
+        "padded OrderSysID is trimmed in OrderUpdate");
+
+  auto tradeRow = zeroed<CThostFtdcTradeField>();
+  setText(tradeRow.OrderRef, "7");
+  setText(tradeRow.TradeID, "      102465");
+  setText(tradeRow.OrderSysID, "      164235");
+  setText(tradeRow.InstrumentID, "au2612");
+  setText(tradeRow.ExchangeID, "SHFE");
+  setText(tradeRow.TradingDay, "20261124");
+  tradeRow.Direction = THOST_FTDC_D_Buy;
+  tradeRow.OffsetFlag = THOST_FTDC_OF_Open;
+  tradeRow.Price = 740.0;
+  tradeRow.Volume = 1;
+  fixture.adapter.OnRtnTrade(&tradeRow);
+
+  check(fixture.recorder.trades.size() == 1, "the trade is published");
+  check(fixture.recorder.trades.back().tradeId == "102465",
+        "padded TradeID is trimmed in Trade");
+  check(fixture.recorder.trades.back().exchangeOrderId == "164235",
+        "padded trade OrderSysID is trimmed in Trade");
+}
+
 void checkTradingDayResetsOrderState() {
   Fixture fixture;
   check(fixture.adapter.onOrderRequest(baseRequest(7)), "the first order is accepted");
@@ -651,6 +681,7 @@ int main() {
   checkUnknownReportsAreBuffered();
   checkModifyRejected();
   checkTradeExchangeFallback();
+  checkPaddedVenueIdsTrimmed();
   checkTradingDayResetsOrderState();
   checkTradeAndAveragePrice();
 

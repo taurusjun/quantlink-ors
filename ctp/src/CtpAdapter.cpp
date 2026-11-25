@@ -404,7 +404,7 @@ struct CtpAdapter::Impl {
     if (orderRef == 0) {
       OrderUpdate update;
       update.status = mapOrderStatus(order->OrderStatus);
-      update.exchangeOrderId = text(order->OrderSysID);
+      update.exchangeOrderId = trimAsciiSpace(text(order->OrderSysID));
       update.exchange = text(order->ExchangeID);
       update.side = mapSide(order->Direction);
       update.offsetFlag = mapOffset(order->CombOffsetFlag[0]);
@@ -419,7 +419,7 @@ struct CtpAdapter::Impl {
     }
     bindRef(orderRef, frontId, sessionId);
 
-    const std::string sysId = text(order->OrderSysID);
+    const std::string sysId = trimAsciiSpace(text(order->OrderSysID));
     const std::string instrument = text(order->InstrumentID);
     const std::string exchange = text(order->ExchangeID);
     const std::string tradingDay = text(order->TradingDay);
@@ -522,8 +522,8 @@ struct CtpAdapter::Impl {
     report.orderRef = orderRef;
     // CTP populates TradeID for every trade callback. An empty value is a
     // venue/API defect, so there is no silent drop path here.
-    report.tradeId = text(trade->TradeID);
-    report.exchangeOrderId = text(trade->OrderSysID);
+    report.tradeId = trimAsciiSpace(text(trade->TradeID));
+    report.exchangeOrderId = trimAsciiSpace(text(trade->OrderSysID));
     report.instrumentId = text(trade->InstrumentID);
     report.exchange = text(trade->ExchangeID);
     report.side = mapSide(trade->Direction);

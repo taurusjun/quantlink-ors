@@ -5,6 +5,15 @@
 
 namespace ors::ctp {
 
+std::string trimAsciiSpace(std::string_view input) {
+  const std::size_t first = input.find_first_not_of(' ');
+  if (first == std::string_view::npos) {
+    return {};
+  }
+  const std::size_t last = input.find_last_not_of(' ');
+  return std::string(input.substr(first, last - first + 1));
+}
+
 std::string gbkToUtf8(std::string_view input) {
   if (input.empty()) return {};
   iconv_t converter = iconv_open("UTF-8", "GB18030");
