@@ -217,6 +217,14 @@ struct Recorder final : SnapshotSink {
   void onSnapshot(const ReconciliationSnapshot&) override { ++published; }
 };
 
+void checkStaleYdPositionIsNotUsed() {
+  auto row = positionRow(THOST_FTDC_PD_Long, 3, 1, 3 * 3400.0 * 10, 3390.0);
+  row.YdPosition = 9;  // stale carry-over; must not be trusted
+  const PositionSnapshot snapshot = mapPositionSnapshot(row, batch(), 10);
+  check(snapshot.yesterdayLong == 2,
+        "yesterday uses Position - TodayPosition, not stale YdPosition");
+}
+
 void checkFailurePublishesNothing() {
   CtpConfig config;
   config.brokerId = "9999";
@@ -245,6 +253,7 @@ void checkFailurePublishesNothing() {
 int main() {
   checkBatchHeader();
   checkPositionSentinels();
+  checkStaleYdPositionIsNotUsed();
   checkAccountMapping();
   checkOrderAndTradeMapping();
   checkFailurePublishesNothing();

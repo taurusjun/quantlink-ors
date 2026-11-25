@@ -77,7 +77,7 @@ PositionSnapshot mapPositionSnapshot(const CThostFtdcInvestorPositionField& row,
 
   const int position = row.Position;
   const int today = row.TodayPosition;
-  const int yesterday = row.YdPosition != 0 ? row.YdPosition : position - today;
+  const int yesterday = std::max(0, position - today);
   const double cost = sanitizeMoney(row.PositionCost);
   const double avgPrice = position > 0 && volumeMultiple > 0
                               ? cost / (static_cast<double>(position) * volumeMultiple)

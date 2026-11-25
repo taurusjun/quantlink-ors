@@ -317,8 +317,8 @@ struct CtpAdapter::Impl {
   /// turns it into REJECTED with the venue's reason.
   void onInsertRejected(const CThostFtdcInputOrderField* order,
                         const CThostFtdcRspInfoField* info) {
-    if (order == nullptr || info == nullptr || info->ErrorID == 0) {
-      return;  // accepted: nothing to add to the NEW already published
+    if (order == nullptr || info == nullptr) {
+      return;
     }
     const std::uint64_t orderRef = resolve(text(order->OrderRef), 0, 0);
     OrderUpdate update;
@@ -555,11 +555,13 @@ struct CtpAdapter::Impl {
     switch (request.timeInForce) {
       case TimeInForce::Ioc:
         ctp.TimeCondition = THOST_FTDC_TC_IOC;
-        ctp.VolumeCondition = THOST_FTDC_VC_AV;
+        ctp.VolumeCondition = THOST_FTDC_VC_CV;
+        ctp.MinVolume = request.qty;
         break;
       case TimeInForce::Fak:
         ctp.TimeCondition = THOST_FTDC_TC_IOC;
-        ctp.VolumeCondition = THOST_FTDC_VC_CV;
+        ctp.VolumeCondition = THOST_FTDC_VC_AV;
+        ctp.MinVolume = 1;
         break;
       case TimeInForce::Fok:
         ctp.TimeCondition = THOST_FTDC_TC_IOC;
@@ -570,6 +572,7 @@ struct CtpAdapter::Impl {
       default:
         ctp.TimeCondition = THOST_FTDC_TC_GFD;
         ctp.VolumeCondition = THOST_FTDC_VC_AV;
+        ctp.MinVolume = 1;
         break;
     }
     ctp.ContingentCondition = THOST_FTDC_CC_Immediately;

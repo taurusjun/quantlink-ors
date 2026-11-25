@@ -192,6 +192,7 @@ void checkInsertAccepted() {
         "DAY maps to good-for-day");
   check(fixture.sender.lastInsert.VolumeCondition == THOST_FTDC_VC_AV,
         "DAY accepts any volume");
+  check(fixture.sender.lastInsert.MinVolume == 1, "DAY sets minimum volume 1");
   checkNear(fixture.sender.lastInsert.LimitPrice, 500.0, "price reaches CTP");
   check(fixture.sender.lastInsert.VolumeTotalOriginal == 2, "quantity reaches CTP");
   check(fieldText(fixture.sender.lastInsert.InvestorID) == "900001",
@@ -218,8 +219,17 @@ void checkTimeInForceMapping() {
   check(fixture.sender.lastInsert.CombOffsetFlag[0] == THOST_FTDC_OF_CloseToday,
         "close today maps to its own CTP flag");
   check(fixture.sender.lastInsert.TimeCondition == THOST_FTDC_TC_IOC, "IOC maps to CTP IOC");
+  check(fixture.sender.lastInsert.VolumeCondition == THOST_FTDC_VC_CV,
+        "IOC requires the full volume");
+  check(fixture.sender.lastInsert.MinVolume == 2, "IOC sets minimum volume");
+
+  OrderRequest fak = baseRequest(11);
+  fak.timeInForce = TimeInForce::Fak;
+  check(fixture.adapter.onOrderRequest(fak), "a FAK order is accepted");
+  check(fixture.sender.lastInsert.TimeCondition == THOST_FTDC_TC_IOC, "FAK maps to CTP IOC");
   check(fixture.sender.lastInsert.VolumeCondition == THOST_FTDC_VC_AV,
-        "IOC still accepts any volume");
+        "FAK accepts any volume");
+  check(fixture.sender.lastInsert.MinVolume == 1, "FAK sets minimum volume 1");
 
   OrderRequest fok = baseRequest(9);
   fok.timeInForce = TimeInForce::Fok;
@@ -364,6 +374,29 @@ void checkInsertRejectedByCtp() {
   check(update.status == OrderStatus::Rejected, "a CTP insert error is REJECTED");
   check(update.errorCode == 31, "the CTP error id is carried");
   check(update.reason == "no trading session", "the CTP reason is carried");
+  check(update.orderRef == 7, "the rejection is tied to the contract orderRef");
+  check(update.remainingQty == 0, "a rejected order has no remaining quantity");
+}
+
+void checkInsertRejectedWithZeroError() {
+  Fixture fixture;
+  check(fixture.adapter.onOrderRequest(baseRequest(7)), "the order is accepted locally");
+
+  auto echo = zeroed<CThostFtdcInputOrderField>();
+  setText(echo.OrderRef, "7");
+  setText(echo.InstrumentID, "au2612");
+  setText(echo.ExchangeID, "SHFE");
+  echo.Direction = THOST_FTDC_D_Buy;
+  echo.CombOffsetFlag[0] = THOST_FTDC_OF_Open;
+  echo.VolumeTotalOriginal = 2;
+  echo.LimitPrice = 500.0;
+  auto info = rspError(0, "");
+  fixture.adapter.OnRspOrderInsert(&echo, &info);
+
+  const OrderUpdate& update = fixture.recorder.last();
+  check(update.status == OrderStatus::Rejected,
+        "an insert response with error id 0 is still REJECTED");
+  check(update.errorCode == 0, "the zero error id is carried");
   check(update.orderRef == 7, "the rejection is tied to the contract orderRef");
   check(update.remainingQty == 0, "a rejected order has no remaining quantity");
 }
@@ -545,6 +578,7 @@ int main() {
   checkRejectCancelRequest();
   checkCancelBeforeAck();
   checkInsertRejectedByCtp();
+  checkInsertRejectedWithZeroError();
   checkExchangeRejectInsert();
   checkDuplicateAndRange();
   checkSenderFailure();
