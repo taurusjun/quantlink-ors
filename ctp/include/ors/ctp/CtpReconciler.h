@@ -36,6 +36,9 @@ class CtpReconciler {
 
   State state(std::uint64_t orderRef) const;
   bool canSubmit(std::uint64_t orderRef) const;
+
+  /// Runtime gate: no new order while reconnect/reconciliation is pending.
+  bool allowsNewOrder(bool reconnecting, std::uint64_t orderRef) const;
   std::uint64_t epoch() const;
 
  private:

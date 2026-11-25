@@ -205,8 +205,9 @@ re-submit same orderRef -> REJECTED (orderRef already in use)
 cancel original -> CANCELED
 ```
 
-Note: duplicate protection was observed at the CtpAdapter orderRef map; the
-CtpReconciler canSubmit gate was not independently observable in this run.
+Note: duplicate protection was observed at the CtpAdapter orderRef map. The
+runtime `allowsNewOrder` policy and `setEpoch`/cancel-rejection paths now have
+unit tests; a live duplicate that bypasses the adapter map is still not injected.
 
 ## 7. Known gaps
 

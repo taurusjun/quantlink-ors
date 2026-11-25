@@ -199,6 +199,29 @@ void checkSession() {
   check(executionFound, "execution high-water encoded");
 }
 
+void checkSessionEpochUpdate() {
+  FakePublisher publisher;
+  ContractSink sink(publisher, context());
+  sink.setSourcePublicationEpoch(9);
+  VenueSessionEvent event;
+  event.tradingDay = "20261124";
+  event.loginState = com::quantlink::contract::sbe::GatewayState::UP;
+  event.settlementState = com::quantlink::contract::sbe::SettlementState::SETTLED;
+  event.state = SbeVenueSessionState::LOST;
+  event.snapshotTimestamp = 100;
+  event.lastSeqByStream = {{2003, 1}};
+  check(sink.publishSession(event), "epoch-updated session published");
+
+  com::quantlink::contract::sbe::MessageHeader header;
+  header.wrap(publisher.frames[0].bytes.data(), 0, 0, publisher.frames[0].bytes.size());
+  SbeVenueSession decoded;
+  decoded.wrapForDecode(publisher.frames[0].bytes.data(),
+                        com::quantlink::contract::sbe::MessageHeader::encodedLength(),
+                        header.blockLength(), header.version(),
+                        publisher.frames[0].bytes.size());
+  check(decoded.sourcePublicationEpoch() == 9, "session epoch setter reaches SBE");
+}
+
 void checkSnapshots() {
   FakePublisher publisher;
   ContractSink sink(publisher, context());
@@ -229,6 +252,7 @@ int main() {
   checkExecution();
   checkMarketData();
   checkSession();
+  checkSessionEpochUpdate();
   checkSnapshots();
   if (failures != 0) {
     std::cerr << failures << " failure(s)\n";

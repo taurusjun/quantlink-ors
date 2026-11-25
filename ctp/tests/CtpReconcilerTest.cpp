@@ -58,6 +58,22 @@ void checkReconnectDropsOldReports() {
         "late old-session fill is ignored");
 }
 
+void checkSetEpochAndGate() {
+  CtpReconciler reconciler;
+  reconciler.setEpoch(5);
+  check(reconciler.epoch() == 5, "setEpoch sets the initial epoch");
+  check(reconciler.allowsNewOrder(false, 11), "fresh order is allowed");
+  check(!reconciler.allowsNewOrder(true, 11), "reconnecting blocks new orders");
+
+  reconciler.observe(update(11, 5, OrderStatus::Ack));
+  check(!reconciler.allowsNewOrder(false, 11), "open order blocks reuse");
+  reconciler.reconcile({snapshot(11, '0')}, {}, {});
+  check(reconciler.allowsNewOrder(false, 11), "terminal order is reusable");
+
+  reconciler.onReconnect();
+  check(reconciler.epoch() == 6, "reconnect advances the configured epoch");
+}
+
 void checkQueryFilledWins() {
   CtpReconciler reconciler;
   reconciler.onReconnect();
@@ -85,6 +101,7 @@ void checkMissingOrderBecomesUnknown() {
 
 int main() {
   checkReconnectDropsOldReports();
+  checkSetEpochAndGate();
   checkQueryFilledWins();
   checkMissingOrderBecomesUnknown();
   if (failures != 0) {

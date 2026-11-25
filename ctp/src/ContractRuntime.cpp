@@ -290,7 +290,8 @@ struct ContractRuntime::Impl final : ExecutionSink, SnapshotSink {
             bool allowed = false;
             {
               std::lock_guard<std::mutex> lock(reconMutex);
-              allowed = reconciler.canSubmit(request.orderRef);
+              allowed = reconciler.allowsNewOrder(reconciling.load(std::memory_order_relaxed),
+                                                    request.orderRef);
             }
             if (!allowed) {
               adapter.rejectOrderRequest(request, "orderRef reconciliation pending");

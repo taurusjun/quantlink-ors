@@ -85,6 +85,10 @@ bool CtpReconciler::canSubmit(std::uint64_t orderRef) const {
   return found == states_.end() || terminal(found->second);
 }
 
+bool CtpReconciler::allowsNewOrder(bool reconnecting, std::uint64_t orderRef) const {
+  return !reconnecting && canSubmit(orderRef);
+}
+
 std::uint64_t CtpReconciler::epoch() const {
   return epoch_;
 }

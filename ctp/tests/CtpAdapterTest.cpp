@@ -318,6 +318,21 @@ void checkCancelRejected() {
         "the order keeps its last known status");
 }
 
+void checkRejectCancelRequest() {
+  Fixture fixture;
+  check(fixture.adapter.onOrderRequest(baseRequest(7)), "the order is accepted");
+  auto ack = orderRow("7", 3, 400, THOST_FTDC_OST_NoTradeQueueing, 0, 2);
+  fixture.adapter.OnRtnOrder(&ack);
+
+  check(!fixture.adapter.rejectCancelRequest(cancelFor(7), "reconnect pending"),
+        "a local cancel rejection is returned");
+  check(fixture.recorder.last().cancelState == CancelState::Rejected,
+        "the cancel rejection reaches the sink");
+  check(fixture.recorder.last().reason == "reconnect pending",
+        "the cancel rejection reason is carried");
+  check(fixture.sender.cancels == 0, "no ReqOrderAction is sent");
+}
+
 void checkCancelBeforeAck() {
   Fixture fixture;
   check(fixture.adapter.onOrderRequest(baseRequest(7)), "the order is accepted");
@@ -527,6 +542,7 @@ int main() {
   checkCancelAccepted();
   checkCancelReport();
   checkCancelRejected();
+  checkRejectCancelRequest();
   checkCancelBeforeAck();
   checkInsertRejectedByCtp();
   checkExchangeRejectInsert();
