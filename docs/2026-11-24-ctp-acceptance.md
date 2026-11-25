@@ -1,6 +1,6 @@
 # 2026-11-24 CTP/SimNow Acceptance
 
-- 状态：PARTIAL
+- 状态：PARTIAL（L1 E2E PASS；重连/C 未完成）
 - 环境：190 (`root@101.43.54.190`), SimNow `ors-simnow.cfg`
 - 代码：`52f4c9f feat(ctp): publish L0 contract 0.2.0` + `dae6702 feat(ctp): reconcile after reconnect` + 当前 E2E wiring
 - CTP SDK：`/root/quantlink-trading/ors/third_party/ctp/linux`
@@ -135,8 +135,17 @@ trade.requestId was empty -> fill it from the order state
 snapshotTimestamp/ingestTimestamp were milliseconds -> emit epoch nanoseconds
 ```
 
-The final Trade decode + fresh Account/Position assertion has to be re-run after
-the 11:30-13:30 lunch break; 11:33 orders were rejected by the closed exchange.
+The final live E2E was re-run on 2026-11-25 during the afternoon session and
+passed end-to-end:
+
+```text
+runtime sourceSession=1795584979085096323 epoch=1
+MD ask=759.30
+orderRef=323450831
+NEW -> ACK -> FILLED
+Trade tradeId=266036 qty=1 price=759.30
+FASTTRADE_MVP_OK (fresh Account/Position passed)
+```
 
 Also completed after that run:
 
@@ -156,20 +165,16 @@ SNAPSHOT ready=true account=true positions=2
 ```
 
 So the L1 wiring is **verified through command submission, execution publication,
-and account/position snapshots**, but **live fill/cancel still need a trading-hours
-run**.
+account/position snapshots, and one live fill** (Trade + fresh snapshots).
 
 ## 7. Known gaps
 
 ```text
-1. Final live Trade decode + fresh Account/Position assertion after the timestamp
-   fix; the 11:33 CST run hit the lunch break.
-2. CtpReconciler is unit-tested but not wired into the reconnect loop.
-3. sourceSessionId is generated per start and epoch is configurable, but automatic
-   epoch increment on reconnect still belongs to the C reconnect work.
-4. Manual disconnect/reconnect and stale-report discard smoke was not run.
-5. GBK -> UTF-8 conversion and its unit test are done; a live CTP error reason
-   assertion on the L1 wire is still pending.
+1. CtpReconciler is unit-tested but not wired into the reconnect loop.
+2. Automatic epoch increment on reconnect still belongs to the C reconnect work.
+3. Manual disconnect/reconnect and stale-report discard smoke was not run.
+4. GBK -> UTF-8 conversion and its unit test are done; console rendering depends
+   on the JVM output encoding.
 ```
 
 Therefore this acceptance is **PARTIAL**, not a production L1 end-to-end sign-off.
@@ -177,11 +182,11 @@ Therefore this acceptance is **PARTIAL**, not a production L1 end-to-end sign-of
 ## 8. Next acceptance gate
 
 ```text
-rerun during exchange trading hours:
+reconnect gate:
   start one long-running ORS process
-  -> FastTrade AccessClient sees VenueSession READY + MarketData
-  -> one live order/fill
-  -> FastTrade sees OrderUpdate/Trade and fresh Account/Position
-  -> optional cancel path
-  -> disconnect/reconnect, epoch changes, old reports discarded
+  -> force disconnect / reconnect
+  -> epoch increments, old reports discarded
+  -> open orders reconciled, no duplicate orderRef submission
 ```
+
+L1 order/fill/account/position gate: PASS on 2026-11-25 afternoon.
