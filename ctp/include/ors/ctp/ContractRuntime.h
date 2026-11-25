@@ -12,17 +12,22 @@ namespace ors::ctp {
 
 struct ContractRuntimeConfig {
   std::string aeronDir;
-  std::string venueId{"SIMNOW"};
-  std::string orsId{"ors-ctp-1"};
-  std::string environment{"SHADOW"};
-  std::string exchange{"SHFE"};
+  std::string venueId;
+  std::string orsId;
+  std::string environment;
+  std::string exchange;
   std::uint64_t sourceSessionId{0};        ///< 0 = generate one per runtime start
-  std::uint64_t sourcePublicationEpoch{1};
+  std::uint64_t sourcePublicationEpoch{0};
   std::vector<std::string> instruments;
-  ContractStreams streams{9004, 9005, 9006, 9007, 9001};
-  int orderStream{9002};
-  int cancelStream{9003};
+  ContractStreams streams;
+  int orderStream{0};
+  int cancelStream{0};
   int queryIntervalSeconds{1};
+
+  /// Reads the runtime section from the same key=value file as CtpConfig.
+  /// Required keys: AERON_DIR, VENUE_ID, ORS_ID, ENVIRONMENT, EXCHANGE,
+  /// INSTRUMENTS, STREAM_BASE, SOURCE_PUBLICATION_EPOCH.
+  static ContractRuntimeConfig load(const std::string& path);
 };
 
 /// Long-running ORS loop: CTP callbacks -> ContractSink/Aeron, and L1 commands

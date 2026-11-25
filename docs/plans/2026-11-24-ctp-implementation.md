@@ -214,7 +214,7 @@ OnRspQryInstrument(bIsLast=true) -> READY
 190：
 
 ```bash
-./build/ctp/ors_ctp --config /opt/ors/configs/simnow.cfg --mode login-smoke
+./build/ctp/ors_ctp_smoke --config /opt/ors/configs/simnow.cfg --mode login-smoke
 ```
 
 Expected: 输出 `READY` 和 instrument 数量，退出码 0。
@@ -263,7 +263,7 @@ OnRtnDepthMarketData -> mapDepthMarketData
 - [ ] **Step 3: 190 SimNow 行情 smoke**
 
 ```bash
-./build/ctp/ors_ctp --config /opt/ors/configs/simnow.cfg --mode md-smoke
+./build/ctp/ors_ctp_smoke --config /opt/ors/configs/simnow.cfg --mode md-smoke
 ```
 
 Expected: 至少收到一条行情，20 档结构完整。
@@ -303,7 +303,7 @@ ReqQryOrder / ReqQryTrade -> ReconciliationSnapshot
 - [ ] **Step 3: 190 SimNow 查询 smoke**
 
 ```bash
-./build/ctp/ors_ctp --config /opt/ors/configs/simnow.cfg --mode query-smoke
+./build/ctp/ors_ctp_smoke --config /opt/ors/configs/simnow.cfg --mode query-smoke
 ```
 
 Expected: 账户余额/持仓/订单查询返回；输出不包含密码。
@@ -367,7 +367,7 @@ modify -> rejected unsupported
 在允许交易的时段：
 
 ```bash
-./build/ctp/ors_ctp --config /opt/ors/configs/simnow.cfg --mode order-smoke
+./build/ctp/ors_ctp_smoke --config /opt/ors/configs/simnow.cfg --mode order-smoke
 ```
 
 Expected: 下单、撤单、OrderUpdate/Trade 完整。
@@ -512,9 +512,9 @@ ctest --test-dir /opt/quantlink-ors/build --output-on-failure
 SimNow smoke：
 
 ```bash
-/opt/quantlink-ors/build/ctp/ors_ctp --config /opt/ors/configs/simnow.cfg --mode login-smoke
-/opt/quantlink-ors/build/ctp/ors_ctp --config /opt/ors/configs/simnow.cfg --mode query-smoke
-/opt/quantlink-ors/build/ctp/ors_ctp --config /opt/ors/configs/simnow.cfg --mode md-smoke
+/opt/quantlink-ors/build/ctp/ors_ctp_smoke --config /opt/ors/configs/simnow.cfg --mode login-smoke
+/opt/quantlink-ors/build/ctp/ors_ctp_smoke --config /opt/ors/configs/simnow.cfg --mode query-smoke
+/opt/quantlink-ors/build/ctp/ors_ctp_smoke --config /opt/ors/configs/simnow.cfg --mode md-smoke
 ```
 
 Expected:
