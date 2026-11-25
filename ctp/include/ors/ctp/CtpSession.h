@@ -109,6 +109,10 @@ class CtpTraderSession {
   /// Trading day from the login response; empty before READY.
   std::string tradingDay() const;
 
+  /// CTP FrontID/SessionID from the last successful login; 0 before login.
+  int frontId() const;
+  int sessionId() const;
+
   /// The single TraderApi behind this session; null before a successful
   /// start(). Request-only users send through it and receive their responses
   /// via setQuerySpi().

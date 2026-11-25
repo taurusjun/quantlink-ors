@@ -39,6 +39,15 @@ std::uint64_t epochNanos() {
       std::chrono::duration_cast<std::chrono::nanoseconds>(elapsed).count());
 }
 
+/// True when a report belongs to the current login. A zero side is unknown
+/// (startup or a callback that does not carry the identity) and is allowed.
+bool sameSession(const SessionIdentity& current, int frontId, int sessionId) {
+  if (current.frontId == 0 || current.sessionId == 0 || frontId == 0 || sessionId == 0) {
+    return true;
+  }
+  return current.frontId == frontId && current.sessionId == sessionId;
+}
+
 OrderStatus mapOrderStatus(char status) {
   switch (status) {
     case THOST_FTDC_OST_AllTraded:
@@ -165,14 +174,17 @@ struct CtpAdapter::Impl {
     OrderStatus status{OrderStatus::New};
     bool ackPublished{false};
     bool cancelRequested{false};
+    bool cancelRejected{false};
     bool terminal{false};
     std::string requestId;
   };
 
-  Impl(CtpTraderSession& session, OrderSender* sender)
+  Impl(CtpTraderSession& session, OrderSender* sender,
+       SessionIdentityProvider identityProvider = {})
       : session_(session),
         ownedSender_(sender == nullptr ? std::make_unique<SessionSender>(session) : nullptr),
-        sender_(sender == nullptr ? *ownedSender_ : *sender) {
+        sender_(sender == nullptr ? *ownedSender_ : *sender),
+        identityProvider_(std::move(identityProvider)) {
     spi_ = std::make_unique<Spi>(*this);
     session_.setOrderSpi(spi_.get());
   }
@@ -181,6 +193,13 @@ struct CtpAdapter::Impl {
 
   Impl(const Impl&) = delete;
   Impl& operator=(const Impl&) = delete;
+
+  SessionIdentity currentIdentity() const {
+    if (identityProvider_) {
+      return identityProvider_();
+    }
+    return {session_.frontId(), session_.sessionId()};
+  }
 
   bool onOrderRequest(const OrderRequest& request) {
     resetTradingDay(session_.tradingDay());
@@ -245,6 +264,14 @@ struct CtpAdapter::Impl {
     if (!known) {
       return rejectUnknownCancel(request);
     }
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      const auto found = orders_.find(request.orderRef);
+      if (found != orders_.end()) {
+        found->second.cancelRequested = false;
+        found->second.cancelRejected = false;
+      }
+    }
     if (state.status == OrderStatus::Filled || state.status == OrderStatus::Canceled) {
       return rejectCancel(request.orderRef, state, "order is already terminal");
     }
@@ -263,6 +290,7 @@ struct CtpAdapter::Impl {
       const auto found = orders_.find(request.orderRef);
       if (found != orders_.end()) {
         found->second.cancelRequested = true;
+        found->second.cancelRejected = false;
       }
     }
     return true;
@@ -338,7 +366,14 @@ struct CtpAdapter::Impl {
       return;
     }
     resetTradingDay(session_.tradingDay());
+    const SessionIdentity current = currentIdentity();
     const std::uint64_t orderRef = resolve(text(order->OrderRef), 0, 0);
+    if (orderRef != 0) {
+      const OrderState state = stateOf(orderRef);
+      if (!sameSession(current, state.frontId, state.sessionId)) {
+        return;
+      }
+    }
     OrderUpdate update;
     update.orderRef = orderRef;
     update.status = OrderStatus::Rejected;
@@ -366,8 +401,12 @@ struct CtpAdapter::Impl {
       return;
     }
     resetTradingDay(session_.tradingDay());
+    const SessionIdentity current = currentIdentity();
     const std::uint64_t orderRef =
         resolve(text(action->OrderRef), action->FrontID, action->SessionID);
+    if (!sameSession(current, action->FrontID, action->SessionID)) {
+      return;
+    }
     if (orderRef == 0) {
       bufferCancelReject(text(action->ExchangeID), info);
       return;
@@ -382,8 +421,12 @@ struct CtpAdapter::Impl {
       return;
     }
     resetTradingDay(session_.tradingDay());
+    const SessionIdentity current = currentIdentity();
     const std::uint64_t orderRef =
         resolve(text(action->OrderRef), action->FrontID, action->SessionID);
+    if (!sameSession(current, action->FrontID, action->SessionID)) {
+      return;
+    }
     if (orderRef == 0) {
       bufferCancelReject(text(action->ExchangeID), info);
       return;
@@ -397,9 +440,13 @@ struct CtpAdapter::Impl {
       return;
     }
     resetTradingDay(session_.tradingDay());
+    const SessionIdentity current = currentIdentity();
     const std::string ctpRef = text(order->OrderRef);
     const int frontId = order->FrontID;
     const int sessionId = order->SessionID;
+    if (!sameSession(current, frontId, sessionId)) {
+      return;
+    }
     const std::uint64_t orderRef = resolve(ctpRef, frontId, sessionId);
     if (orderRef == 0) {
       OrderUpdate update;
@@ -461,7 +508,12 @@ struct CtpAdapter::Impl {
       if (order->OrderSubmitStatus == THOST_FTDC_OSS_CancelRejected) {
         // The cancel failed; the order is still working. Handle this before
         // the Canceled/Filled mapping, which would otherwise make it terminal.
+        // CTP can report the same reject on OnRtnOrder and OnErrRtnOrderAction.
+        if (state.cancelRejected) {
+          return;
+        }
         state.cancelRequested = false;
+        state.cancelRejected = true;
         state.ackPublished = true;
         state.status = state.tradeFilledQty > 0 ? OrderStatus::Partial : OrderStatus::Ack;
         publishUpdate = true;
@@ -516,6 +568,7 @@ struct CtpAdapter::Impl {
       return;
     }
     resetTradingDay(session_.tradingDay());
+    const SessionIdentity current = currentIdentity();
     const std::uint64_t orderRef = resolve(text(trade->OrderRef), 0, 0);
 
     Trade report;
@@ -544,6 +597,9 @@ struct CtpAdapter::Impl {
         knownOrder = false;
       } else {
         OrderState& state = found->second;
+        if (!sameSession(current, state.frontId, state.sessionId)) {
+          return;
+        }
         if (report.exchange.empty()) {
           report.exchange = state.exchange;
         }
@@ -743,7 +799,11 @@ struct CtpAdapter::Impl {
       lastError_ = reason;
       const auto found = orders_.find(orderRef);
       if (found != orders_.end()) {
+        if (found->second.cancelRejected) {
+          return false;
+        }
         found->second.cancelRequested = false;
+        found->second.cancelRejected = true;
       }
     }
     OrderUpdate update = fromState(orderRef, state);
@@ -893,6 +953,7 @@ struct CtpAdapter::Impl {
   CtpTraderSession& session_;
   std::unique_ptr<OrderSender> ownedSender_;
   OrderSender& sender_;
+  SessionIdentityProvider identityProvider_;
   mutable std::mutex mutex_;
   CtpOrderRefMap refs_;
   std::unordered_map<std::uint64_t, OrderState> orders_;
@@ -910,6 +971,10 @@ CtpAdapter::CtpAdapter(CtpTraderSession& session)
 
 CtpAdapter::CtpAdapter(CtpTraderSession& session, OrderSender& sender)
     : impl_(std::make_unique<Impl>(session, &sender)) {}
+
+CtpAdapter::CtpAdapter(CtpTraderSession& session, OrderSender& sender,
+                       SessionIdentityProvider identityProvider)
+    : impl_(std::make_unique<Impl>(session, &sender, std::move(identityProvider))) {}
 
 CtpAdapter::~CtpAdapter() = default;
 

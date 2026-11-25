@@ -121,6 +121,31 @@ This also confirmed that CTP's fixed-width `TradeID` / `OrderSysID` fields are
 trimmed before entering the contract; the earlier live run exposed leading
 spaces (`"      102465"`).
 
+## 5.2 Live cancel reject
+
+`ors_ctp_smoke --mode cancel-reject-smoke --live` was added to exercise a real
+CTP cancel reject instead of a mocked callback:
+
+```text
+NEW -> ACK (sysId=189761)
+raw ReqOrderAction FrontID=0 SessionID=0 -> rc=0
+ACK cancel=REJECTED error=25 reason=CTP:撤单找不到相应报单
+cleanup cancel -> CANCELED
+```
+
+CTP delivered both `OnRspOrderAction` and `OnErrRtnOrderAction` for the one
+request; L0 now publishes only one `cancelState=REJECTED` update per cancel
+attempt. The order stayed ACK (not CANCELED) until the cleanup cancel.
+
+Connection-generation guard: `CtpAdapter` now compares `FrontID` / `SessionID`
+from the login response against incoming order/cancel reports and drops reports
+from an old front. `OnRtnTrade` uses the order's bound identity. The deterministic
+case is covered by `CtpAdapterTest::checkOldSessionReportsDropped`; a real old
+front callback is not naturally reproducible on SimNow, so it remains a
+fault-injection test rather than a live venue replay.
+
+Current 190 ctest: 16/16 PASS (`ctp_cancel_reject_mode_wired` added).
+
 ## 6. L1 runtime wiring (CTP ORS -> FastTrade AccessClient)
 
 Implemented:
@@ -260,6 +285,12 @@ ContractRuntime::onOrderUpdate/onTrade
   -> always writes currentEpoch into sourcePublicationEpoch
   -> CtpReconciler.observe sees a current-epoch event
 ```
+
+Partial mitigation: `CtpAdapter` compares the login response's `FrontID` /
+`SessionID` with `OnRtnOrder`, cancel reports and the bound order of
+`OnRtnTrade`; reports from a different old front are dropped before the runtime
+stamps them. Residual case: a new login that reuses the same
+`FrontID` / `SessionID` cannot be distinguished by this check.
 
 If the CTP SDK delivers an old-session order/trade callback after reconnect, it
 will not be recognised as stale. A stale `FILLED` or `Trade` could therefore be

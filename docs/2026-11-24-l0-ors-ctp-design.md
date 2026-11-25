@@ -268,6 +268,11 @@ stream IDs            由 STREAM_BASE 按固定布局整组生成
 CTP 回调统一盖成当前 epoch，若 SDK 在重连后仍投递旧 front 回报，旧 FILLED/Trade
 可能被当成新事件。详见 `docs/2026-11-24-ctp-acceptance.md` §7.1。
 
+当前已加一层连接代次过滤：`CtpAdapter` 用登录返回的 `FrontID` / `SessionID`
+核对 `OnRtnOrder`、撤单回报和已绑定订单的 `OnRtnTrade`；旧 front 的回报直接丢弃。
+代码位置和覆盖见 `CtpAdapterTest::checkOldSessionReportsDropped`。如果新旧登录
+拿到相同的 `FrontID` / `SessionID`，仅靠这层仍无法区分，这是剩余风险。
+
 成交事件不重放：CTP `OnRtnTrade` 按 at-most-once 处理，L0 不按 `tradeId` 去重。
 Aeron 发布使用 `aeron:ipc`，没有 Archive/replay；重连查询得到的 `TradeSnapshot`
 只进入 `CtpReconciler` 更新订单状态，不会重新发布 `Trade`。如果未来引入
@@ -460,6 +465,19 @@ sourceSessionId / sourcePublicationEpoch
 ```
 
 未知 orderRef 不丢弃：进入 reconciliation buffer，等待查询或后续回报。
+
+撤单拒绝：
+
+```text
+CTP 通过 OnRspOrderAction（前台拒绝）和 OnErrRtnOrderAction（交易所拒绝）返回；
+同一次撤单请求可能两个回调都到，L0 按一次 cancel attempt 只发布一次
+cancelState=REJECTED，订单 status 保持 REJECTED 前的工作状态（ACK/PARTIAL）。
+OnRtnOrder 的 OrderSubmitStatus=CancelRejected 也走同一去重标记。
+```
+
+`ors_ctp_smoke --mode cancel-reject-smoke --live` 会挂一笔远离市价的单，发送一个
+FrontID/SessionID 不匹配的 `ReqOrderAction`，验证真实 CTP 撤单拒绝，然后再正常
+撤单清理。它不通过 `CtpAdapter::onCancelRequest` 伪造请求。
 
 ---
 

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <string>
 #include <vector>
@@ -91,6 +92,14 @@ struct ModifyRequest {
 };
 
 inline constexpr const char* kModifyUnsupportedReason = "modify unsupported by CTP";
+
+/// CTP login identity. Reports from another FrontID/SessionID are stale.
+struct SessionIdentity {
+  int frontId{0};
+  int sessionId{0};
+};
+
+using SessionIdentityProvider = std::function<SessionIdentity()>;
 
 /// One L0 OrderUpdate. venueId/environment/sourceSessionId/epoch default to 0
 /// and are filled by whoever owns the contract context (Task 6).
@@ -187,6 +196,9 @@ class CtpAdapter {
   explicit CtpAdapter(CtpTraderSession& session);
   /// Uses a caller-provided transport; the test seam, never production.
   CtpAdapter(CtpTraderSession& session, OrderSender& sender);
+  /// Test seam for simulating a login identity change.
+  CtpAdapter(CtpTraderSession& session, OrderSender& sender,
+             SessionIdentityProvider identityProvider);
   ~CtpAdapter();
 
   CtpAdapter(const CtpAdapter&) = delete;

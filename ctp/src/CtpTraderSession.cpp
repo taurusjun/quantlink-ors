@@ -161,6 +161,16 @@ struct CtpTraderSession::Impl {
     return tradingDay_;
   }
 
+  int frontId() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return loginFrontId_;
+  }
+
+  int sessionId() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return loginSessionId_;
+  }
+
   CThostFtdcTraderApi* traderApi() const {
     std::lock_guard<std::mutex> lock(mutex_);
     return api_;
@@ -311,6 +321,8 @@ struct CtpTraderSession::Impl {
     if (login != nullptr) {
       std::lock_guard<std::mutex> lock(mutex_);
       tradingDay_ = login->TradingDay;
+      loginFrontId_ = login->FrontID;
+      loginSessionId_ = login->SessionID;
     }
     setState(SessionState::SettlementConfirming);
 
@@ -526,6 +538,8 @@ struct CtpTraderSession::Impl {
   SessionState state_{SessionState::Disconnected};
   std::string lastError_;
   std::string tradingDay_;
+  int loginFrontId_{0};
+  int loginSessionId_{0};
   std::vector<Instrument> instruments_;
   std::atomic<int> requestId_{0};
   bool stopping_{false};
@@ -558,6 +572,14 @@ const CtpConfig& CtpTraderSession::config() const {
 
 std::string CtpTraderSession::tradingDay() const {
   return impl_->tradingDay();
+}
+
+int CtpTraderSession::frontId() const {
+  return impl_->frontId();
+}
+
+int CtpTraderSession::sessionId() const {
+  return impl_->sessionId();
 }
 
 CThostFtdcTraderApi* CtpTraderSession::traderApi() const {

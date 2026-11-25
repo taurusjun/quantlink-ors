@@ -2,6 +2,7 @@
 #include <cmath>
 #include <condition_variable>
 #include <cstddef>
+#include <cstdio>
 #include <exception>
 #include <iostream>
 #include <mutex>
@@ -10,6 +11,8 @@
 #include <thread>
 #include <utility>
 #include <vector>
+
+#include <ThostFtdcTraderApi.h>
 
 #include "ors/ctp/CtpAdapter.h"
 #include "ors/ctp/CtpConfig.h"
@@ -35,8 +38,13 @@ using ors::ctp::splitList;
 using ors::ctp::TimeInForce;
 using ors::ctp::Trade;
 
+template <std::size_t N>
+void copyField(char (&field)[N], const std::string& value) {
+  std::snprintf(field, N, "%s", value.c_str());
+}
+
 void usage() {
-  std::cout << "usage: ors_ctp_smoke [--config PATH] --mode login-smoke|md-smoke|query-smoke|order-smoke\n"
+  std::cout << "usage: ors_ctp_smoke [--config PATH] --mode login-smoke|md-smoke|query-smoke|order-smoke|cancel-reject-smoke\n"
                "              [--instruments ID[,ID...]]\n"
                "              [--price PRICE --qty N [--side buy|sell]\n"
                "               [--offset open|close|close-today|close-yesterday] [--live]]\n"
@@ -52,7 +60,12 @@ void usage() {
                "  --mode order-smoke      send one limit order on the single\n"
                "                          --instruments entry, cancel it once the\n"
                "                          venue acknowledged it, print every\n"
-               "                          OrderUpdate/Trade. Dry-run unless --live\n";
+               "                          OrderUpdate/Trade. Dry-run unless --live\n"
+               "  --mode cancel-reject-smoke\n"
+               "                          place one resting order, send an invalid\n"
+               "                          ReqOrderAction to provoke a real CTP\n"
+               "                          cancel reject, then clean up with a\n"
+               "                          normal cancel. Requires --live\n";
 }
 
 /// One "price@qty" per level, so the smoke output shows where CTP data stops.
@@ -434,6 +447,133 @@ int orderSmoke(const std::string& configPath, const std::vector<std::string>& in
   return printer.lastCancelState() == CancelState::Rejected ? 1 : 0;
 }
 
+/// Provoke a real CTP cancel reject by sending a ReqOrderAction whose
+/// FrontID/SessionID do not match the accepting session. The normal adapter
+/// path is intentionally bypassed for that request; the reject callback still
+/// goes through the adapter.
+int cancelRejectSmoke(const std::string& configPath,
+                      const std::vector<std::string>& instruments,
+                      const std::string& priceText, const std::string& qtyText) {
+  if (instruments.size() != 1) {
+    std::cerr << "--instruments must name exactly one instrument for "
+                 "--mode cancel-reject-smoke\n";
+    return 2;
+  }
+  double price = 0.0;
+  int qty = 0;
+  if (!parsePrice(priceText, price) || price <= 0.0) {
+    std::cerr << "--price must be a positive number for --mode cancel-reject-smoke\n";
+    return 2;
+  }
+  if (!parseQty(qtyText, qty) || qty <= 0) {
+    std::cerr << "--qty must be a positive integer for --mode cancel-reject-smoke\n";
+    return 2;
+  }
+
+  const std::string& instrument = instruments.front();
+  const CtpConfig config = CtpConfig::load(configPath);
+  std::cout << "config: " << config.summary() << '\n';
+
+  CtpTraderSession session(config);
+  if (!session.start(std::chrono::seconds(120))) {
+    std::cerr << "FAILED: " << session.lastError() << '\n';
+    return 1;
+  }
+  std::cout << toString(session.state()) << " instruments=" << session.instruments().size()
+            << '\n';
+
+  ExecutionPrinter printer;
+  CtpAdapter adapter(session);
+  adapter.setSink(&printer);
+
+  OrderRequest request;
+  request.orderRef = 1;
+  request.instrumentId = instrument;
+  request.side = Side::Buy;
+  request.offsetFlag = Offset::Open;
+  request.orderType = OrderType::Limit;
+  request.timeInForce = TimeInForce::Day;
+  request.price = price;
+  request.qty = qty;
+  request.requestId = "cancel-reject-smoke-1";
+  if (!adapter.onOrderRequest(request)) {
+    std::cerr << "FAILED: insert orderRef=1: " << adapter.lastError() << '\n';
+    return 1;
+  }
+  std::cout << "insert sent orderRef=1\n";
+
+  if (!printer.waitForUpdates(2, std::chrono::seconds(10))) {
+    std::cerr << "FAILED: no venue order report within 10s after the insert\n";
+    return 1;
+  }
+  if (printer.isTerminal()) {
+    std::cerr << "FAILED: order became terminal before the cancel-reject probe; "
+                 "choose a price farther from the market\n";
+    return 1;
+  }
+
+  std::string exchange;
+  for (const auto& listed : session.instruments()) {
+    if (listed.instrumentId == instrument) {
+      exchange = listed.exchangeId;
+      break;
+    }
+  }
+
+  CThostFtdcInputOrderActionField action{};
+  copyField(action.BrokerID, config.brokerId);
+  copyField(action.InvestorID, config.investorId);
+  copyField(action.UserID, config.investorId);
+  copyField(action.OrderRef, std::to_string(request.orderRef));
+  copyField(action.InstrumentID, instrument);
+  copyField(action.ExchangeID, exchange);
+  action.ActionFlag = THOST_FTDC_AF_Delete;
+  action.FrontID = 0;
+  action.SessionID = 0;
+
+  CThostFtdcTraderApi* api = session.traderApi();
+  if (api == nullptr) {
+    std::cerr << "FAILED: trader API is not available\n";
+    return 1;
+  }
+  const int rc = api->ReqOrderAction(&action, session.nextRequestId());
+  std::cout << "raw cancel sent rc=" << rc << " front=0 session=0\n";
+  if (rc != 0) {
+    std::cerr << "FAILED: CTP rejected ReqOrderAction locally; no callback to verify\n";
+    return 1;
+  }
+
+  if (!printer.waitForCancelOutcome(std::chrono::seconds(10))) {
+    std::cerr << "FAILED: no cancel result within 10s after the invalid cancel\n";
+    return 1;
+  }
+  const bool rejected = printer.lastCancelState() == CancelState::Rejected;
+  std::cout << "raw cancel result status=" << toString(printer.lastStatus())
+            << " cancelState=" << toString(printer.lastCancelState()) << '\n';
+  if (!rejected) {
+    std::cerr << "FAILED: CTP did not report a cancel reject\n";
+    return 1;
+  }
+
+  const int beforeCleanup = printer.updateCount();
+  CancelRequest cleanup;
+  cleanup.orderRef = request.orderRef;
+  cleanup.instrumentId = instrument;
+  cleanup.requestId = "cancel-reject-smoke-cleanup";
+  if (!adapter.onCancelRequest(cleanup)) {
+    std::cerr << "FAILED: cleanup cancel refused: " << adapter.lastError() << '\n';
+    return 1;
+  }
+  std::cout << "cleanup cancel sent orderRef=1\n";
+  if (!printer.waitForUpdates(beforeCleanup + 1, std::chrono::seconds(10))) {
+    std::cerr << "FAILED: no cleanup cancel result within 10s\n";
+    return 1;
+  }
+  std::cout << "RESULT rejected=true cleanupStatus=" << toString(printer.lastStatus())
+            << " cleanupCancel=" << toString(printer.lastCancelState()) << '\n';
+  return printer.lastStatus() == OrderStatus::Canceled ? 0 : 1;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -485,12 +625,16 @@ int main(int argc, char** argv) {
     return 2;
   }
   if (mode != "login-smoke" && mode != "md-smoke" && mode != "query-smoke" &&
-      mode != "order-smoke") {
+      mode != "order-smoke" && mode != "cancel-reject-smoke") {
     std::cerr << "unsupported smoke mode: " << mode << '\n';
     usage();
     return 2;
   }
   const bool sendOrders = live && !dryRun;
+  if (mode == "cancel-reject-smoke" && !sendOrders) {
+    std::cerr << "--live is required for --mode cancel-reject-smoke\n";
+    return 2;
+  }
   if ((mode != "order-smoke" || sendOrders) && configPath.empty()) {
     std::cerr << "--config is required for --mode " << mode << '\n';
     return 2;
@@ -500,6 +644,9 @@ int main(int argc, char** argv) {
     if (mode == "order-smoke") {
       return orderSmoke(configPath, splitList(instrumentList), priceText, qtyText, sideText,
                         offsetText, sendOrders);
+    }
+    if (mode == "cancel-reject-smoke") {
+      return cancelRejectSmoke(configPath, splitList(instrumentList), priceText, qtyText);
     }
 
     const CtpConfig config = CtpConfig::load(configPath);

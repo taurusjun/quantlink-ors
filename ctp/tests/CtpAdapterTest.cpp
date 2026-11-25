@@ -116,9 +116,13 @@ struct Fixture {
   CtpTraderSession session;
   FakeSender sender;
   Recorder recorder;
+  ors::ctp::SessionIdentity identity;
   CtpAdapter adapter;
 
-  Fixture() : config(makeConfig()), session(config), adapter(session, sender) {
+  Fixture()
+      : config(makeConfig()),
+        session(config),
+        adapter(session, sender, [this] { return identity; }) {
     adapter.setSink(&recorder);
   }
 };
@@ -364,6 +368,11 @@ void checkCancelRejected() {
         "the CTP reason is carried");
   check(fixture.recorder.last().status == OrderStatus::Ack,
         "the order keeps its last known status");
+
+  const std::size_t afterFirst = fixture.recorder.updates.size();
+  fixture.adapter.OnErrRtnOrderAction(&action, &info);
+  check(fixture.recorder.updates.size() == afterFirst,
+        "the duplicate cancel-reject callback is not published twice");
 }
 
 void checkRejectCancelRequest() {
@@ -561,6 +570,37 @@ void checkTradeExchangeFallback() {
         "the trade exchange falls back to the order state");
 }
 
+void checkOldSessionReportsDropped() {
+  Fixture fixture;
+  fixture.identity = {3, 400};
+  check(fixture.adapter.onOrderRequest(baseRequest(7)), "the order is accepted");
+  auto ack = orderRow("7", 3, 400, THOST_FTDC_OST_NoTradeQueueing, 0, 2);
+  fixture.adapter.OnRtnOrder(&ack);
+  check(fixture.recorder.last().status == OrderStatus::Ack, "the current session ACK is accepted");
+  const std::size_t before = fixture.recorder.updates.size();
+
+  fixture.identity = {5, 600};
+  auto staleOrder = orderRow("7", 3, 400, THOST_FTDC_OST_AllTraded, 2, 2);
+  fixture.adapter.OnRtnOrder(&staleOrder);
+  check(fixture.recorder.updates.size() == before,
+        "a report from the old FrontID/SessionID is dropped");
+
+  auto staleTrade = zeroed<CThostFtdcTradeField>();
+  setText(staleTrade.OrderRef, "7");
+  setText(staleTrade.TradeID, "OLD-T1");
+  setText(staleTrade.InstrumentID, "au2612");
+  setText(staleTrade.ExchangeID, "SHFE");
+  setText(staleTrade.TradingDay, "20261124");
+  staleTrade.Direction = THOST_FTDC_D_Buy;
+  staleTrade.OffsetFlag = THOST_FTDC_OF_Open;
+  staleTrade.Price = 500.0;
+  staleTrade.Volume = 1;
+  fixture.adapter.OnRtnTrade(&staleTrade);
+  check(fixture.recorder.trades.empty(), "a trade from the old session is dropped");
+  check(fixture.recorder.last().status == OrderStatus::Ack,
+        "the old reports do not advance the order state");
+}
+
 void checkPaddedVenueIdsTrimmed() {
   Fixture fixture;
   check(fixture.adapter.onOrderRequest(baseRequest(7)), "the order is accepted");
@@ -681,6 +721,7 @@ int main() {
   checkUnknownReportsAreBuffered();
   checkModifyRejected();
   checkTradeExchangeFallback();
+  checkOldSessionReportsDropped();
   checkPaddedVenueIdsTrimmed();
   checkTradingDayResetsOrderState();
   checkTradeAndAveragePrice();

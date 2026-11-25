@@ -126,6 +126,12 @@ add_test(NAME ctp_order_mode_requires_config COMMAND ors_ctp_smoke --mode order-
 set_tests_properties(ctp_order_mode_requires_config PROPERTIES
   PASS_REGULAR_EXPRESSION "--config is required for --mode order-smoke")
 
+# cancel-reject-smoke is live-only; without --live it must stop before login.
+add_test(NAME ctp_cancel_reject_mode_wired COMMAND ors_ctp_smoke --mode cancel-reject-smoke
+                                                   --instruments au2612 --price 735 --qty 1)
+set_tests_properties(ctp_cancel_reject_mode_wired PROPERTIES
+  PASS_REGULAR_EXPRESSION "--live is required for --mode cancel-reject-smoke")
+
 # SBE codec and stream ownership; no CTP SDK, no network.
 add_executable(ctp_contract_sink_test tests/ContractSinkTest.cpp)
 target_link_libraries(ctp_contract_sink_test PRIVATE ors_contract)
