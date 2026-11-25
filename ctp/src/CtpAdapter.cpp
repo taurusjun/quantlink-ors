@@ -13,7 +13,6 @@
 #include <mutex>
 #include <string>
 #include <unordered_map>
-#include <unordered_set>
 #include <utility>
 
 namespace ors::ctp {
@@ -305,7 +304,6 @@ struct CtpAdapter::Impl {
     }
     orders_.clear();
     refs_.clear();
-    seenTradeIds_.clear();
     pendingUpdates_.clear();
     pendingTrades_.clear();
     trackingTradingDay_ = tradingDay;
@@ -509,6 +507,10 @@ struct CtpAdapter::Impl {
     publish(update);
   }
 
+  // CTP's private trade callback is treated as at-most-once: this adapter has
+  // no Aeron archive/replay, and reconnect queries only update order state,
+  // never republish Trade. If replay is ever introduced, L2 dedups by the
+  // contract key (venueId, accountId, tradingDay, tradeId).
   void onRtnTrade(const CThostFtdcTradeField* trade) {
     if (trade == nullptr) {
       return;
@@ -536,8 +538,6 @@ struct CtpAdapter::Impl {
       bufferTrade(report);
       return;
     }
-    const std::string tradeDay =
-        report.tradingDay.empty() ? session_.tradingDay() : report.tradingDay;
     bool publishUpdate = false;
     bool knownOrder = true;
     {
@@ -547,10 +547,6 @@ struct CtpAdapter::Impl {
         knownOrder = false;
       } else {
         OrderState& state = found->second;
-        const std::string tradeKey = tradeDay + "|" + report.tradeId;
-        if (!seenTradeIds_.insert(tradeKey).second) {
-          return;
-        }
         if (report.exchange.empty()) {
           report.exchange = state.exchange;
         }
@@ -903,7 +899,6 @@ struct CtpAdapter::Impl {
   mutable std::mutex mutex_;
   CtpOrderRefMap refs_;
   std::unordered_map<std::uint64_t, OrderState> orders_;
-  std::unordered_set<std::string> seenTradeIds_;
   std::string trackingTradingDay_;
   std::vector<OrderUpdate> pendingUpdates_;
   std::vector<Trade> pendingTrades_;

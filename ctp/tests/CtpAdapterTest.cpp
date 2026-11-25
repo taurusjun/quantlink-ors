@@ -559,44 +559,6 @@ void checkTradeExchangeFallback() {
   check(fixture.recorder.trades.size() == 1, "the trade is published");
   check(fixture.recorder.trades.front().exchange == "SHFE",
         "the trade exchange falls back to the order state");
-
-  setText(tradeRow.ExchangeID, "SHFE");
-  fixture.adapter.OnRtnTrade(&tradeRow);
-  check(fixture.recorder.trades.size() == 1,
-        "the same tradeId is deduplicated even when exchange arrives later");
-}
-
-void checkDuplicateTradeIgnored() {
-  Fixture fixture;
-  check(fixture.adapter.onOrderRequest(baseRequest(7)), "the order is accepted");
-  auto ack = orderRow("7", 3, 400, THOST_FTDC_OST_NoTradeQueueing, 0, 2);
-  fixture.adapter.OnRtnOrder(&ack);
-
-  auto tradeRow = zeroed<CThostFtdcTradeField>();
-  setText(tradeRow.OrderRef, "7");
-  setText(tradeRow.TradeID, "T1");
-  setText(tradeRow.InstrumentID, "au2612");
-  setText(tradeRow.ExchangeID, "SHFE");
-  setText(tradeRow.TradingDay, "20261124");
-  tradeRow.Direction = THOST_FTDC_D_Buy;
-  tradeRow.OffsetFlag = THOST_FTDC_OF_Open;
-  tradeRow.Price = 501.0;
-  tradeRow.Volume = 1;
-
-  fixture.adapter.OnRtnTrade(&tradeRow);
-  const std::size_t tradesAfterFirst = fixture.recorder.trades.size();
-  const std::size_t updatesAfterFirst = fixture.recorder.updates.size();
-  fixture.adapter.OnRtnTrade(&tradeRow);
-
-  check(fixture.recorder.trades.size() == tradesAfterFirst,
-        "a duplicate tradeId is not published twice");
-  check(fixture.recorder.updates.size() == updatesAfterFirst,
-        "a duplicate trade does not republish the order");
-
-  auto partial = orderRow("7", 3, 400, THOST_FTDC_OST_PartTradedQueueing, 1, 2);
-  fixture.adapter.OnRtnOrder(&partial);
-  check(fixture.recorder.last().filledQty == 1,
-        "a duplicate trade is not added to the filled quantity");
 }
 
 void checkEmptyTradeIdIgnored() {
@@ -709,7 +671,6 @@ int main() {
   checkUnknownReportsAreBuffered();
   checkModifyRejected();
   checkTradeExchangeFallback();
-  checkDuplicateTradeIgnored();
   checkEmptyTradeIdIgnored();
   checkTradingDayResetsOrderState();
   checkTradeAndAveragePrice();

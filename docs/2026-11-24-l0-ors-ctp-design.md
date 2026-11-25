@@ -268,6 +268,12 @@ stream IDs            由 STREAM_BASE 按固定布局整组生成
 CTP 回调统一盖成当前 epoch，若 SDK 在重连后仍投递旧 front 回报，旧 FILLED/Trade
 可能被当成新事件。详见 `docs/2026-11-24-ctp-acceptance.md` §7.1。
 
+成交事件不重放：CTP `OnRtnTrade` 按 at-most-once 处理，L0 不按 `tradeId` 去重。
+Aeron 发布使用 `aeron:ipc`，没有 Archive/replay；重连查询得到的 `TradeSnapshot`
+只进入 `CtpReconciler` 更新订单状态，不会重新发布 `Trade`。如果未来引入
+Aeron Archive 或消费端重放，由 L2 按契约唯一键
+`(venueId, accountId, tradingDay, tradeId)` 做幂等，不在 L0 维护第二套去重集合。
+
 ## 7. 订单与 ID
 
 CTP 字段：
