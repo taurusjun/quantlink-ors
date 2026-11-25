@@ -75,10 +75,8 @@ struct ContractRuntime::Impl final : ExecutionSink, SnapshotSink {
   }
 
   void onTrade(const Trade& trade) override {
-    Trade copy = trade;
-    if (copy.exchange.empty()) copy.exchange = runtimeConfig.exchange;
     std::lock_guard<std::mutex> lock(sinkMutex);
-    sink.publishTrade(copy);
+    sink.publishTrade(trade);
   }
 
   void onSnapshot(const AccountSnapshot& snapshot) override {

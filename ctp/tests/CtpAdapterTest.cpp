@@ -453,6 +453,28 @@ void checkModifyRejected() {
   check(fixture.recorder.last().errorCode == 0, "modify uses no fabricated error code");
 }
 
+void checkTradeExchangeFallback() {
+  Fixture fixture;
+  OrderRequest request = baseRequest(7);
+  request.exchange = "SHFE";
+  check(fixture.adapter.onOrderRequest(request), "the order is accepted");
+
+  auto tradeRow = zeroed<CThostFtdcTradeField>();
+  setText(tradeRow.OrderRef, "7");
+  setText(tradeRow.TradeID, "T-exchange");
+  setText(tradeRow.InstrumentID, "au2612");
+  // SimNow can leave ExchangeID blank on the trade callback.
+  tradeRow.Direction = THOST_FTDC_D_Buy;
+  tradeRow.OffsetFlag = THOST_FTDC_OF_Open;
+  tradeRow.Price = 500.0;
+  tradeRow.Volume = 1;
+  fixture.adapter.OnRtnTrade(&tradeRow);
+
+  check(fixture.recorder.trades.size() == 1, "the trade is published");
+  check(fixture.recorder.trades.front().exchange == "SHFE",
+        "the trade exchange falls back to the order state");
+}
+
 void checkTradeAndAveragePrice() {
   Fixture fixture;
   check(fixture.adapter.onOrderRequest(baseRequest(7)), "the order is accepted");
@@ -512,6 +534,7 @@ int main() {
   checkSenderFailure();
   checkUnknownReportsAreBuffered();
   checkModifyRejected();
+  checkTradeExchangeFallback();
   checkTradeAndAveragePrice();
 
   if (failures != 0) {

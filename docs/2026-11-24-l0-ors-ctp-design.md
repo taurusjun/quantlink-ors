@@ -306,6 +306,9 @@ CTP error 51 只作为失败回报，不能反过来驱动 ORS 猜 split。
 非 SHFE/INE 交易所的显式 `CLOSE_TODAY` / `CLOSE_YESTERDAY` 由 L2 拒绝；
 CTP ORS 不替 L2 做交易所规则校验，也不把 `CLOSE_TODAY` 改写成 `CLOSE`。
 
+成交回报的 `ExchangeID` 可能为空：`CtpAdapter` 用该笔订单的逐单 exchange 兜底，
+runtime 不使用全局配置 exchange，避免多交易所账户把成交标错。
+
 CTP 头文件里有 `THOST_FTDC_AF_Modify` 常量，但当前 CTP API 文档明确：
 
 ```text
