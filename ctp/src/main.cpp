@@ -9,15 +9,14 @@
 namespace {
 
 void usage() {
-  std::cout << "usage: ors_ctp --config PATH --mode runtime\n"
-               "              --aeron-dir DIR --instruments ID[,ID...]\n"
+  std::cout << "usage: ors_ctp --config PATH --aeron-dir DIR --instruments ID[,ID...]\n"
                "              [--venue-id ID] [--ors-id ID] [--environment NAME]\n"
                "              [--exchange NAME] [--source-session-id N]\n"
                "              [--source-publication-epoch N] [--stream-base N]\n"
                "\n"
                "  (no arguments)          print this usage and exit\n"
-               "  --mode runtime          run the CTP ORS runtime\n"
                "\n"
+               "This binary runs the CTP ORS runtime only.\n"
                "Smoke tools are in the separate ors_ctp_smoke binary.\n";
 }
 
@@ -44,7 +43,6 @@ std::vector<std::string> splitList(const std::string& value) {
 
 int main(int argc, char** argv) {
   std::string configPath;
-  std::string mode;
   std::string instrumentList;
   std::string aeronDir;
   std::string venueId = "SIMNOW";
@@ -58,8 +56,6 @@ int main(int argc, char** argv) {
     const std::string argument = argv[index];
     if (argument == "--config" && index + 1 < argc) {
       configPath = argv[++index];
-    } else if (argument == "--mode" && index + 1 < argc) {
-      mode = argv[++index];
     } else if (argument == "--instruments" && index + 1 < argc) {
       instrumentList = argv[++index];
     } else if (argument == "--aeron-dir" && index + 1 < argc) {
@@ -88,22 +84,12 @@ int main(int argc, char** argv) {
     }
   }
 
-  if (mode.empty()) {
-    if (!configPath.empty()) {
-      std::cerr << "--mode is required with --config\n";
-      return 2;
-    }
+  if (argc == 1) {
     usage();
     return 0;
   }
-  if (mode != "runtime") {
-    std::cerr << "unsupported mode: " << mode
-              << " (smoke modes live in ors_ctp_smoke)\n";
-    usage();
-    return 2;
-  }
   if (configPath.empty() || aeronDir.empty() || instrumentList.empty()) {
-    std::cerr << "--config, --aeron-dir and --instruments are required for --mode runtime\n";
+    std::cerr << "--config, --aeron-dir and --instruments are required\n";
     return 2;
   }
 

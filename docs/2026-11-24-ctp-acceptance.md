@@ -105,7 +105,7 @@ ContractSink: OrderUpdate, Trade, MarketData, AccountSnapshot,
 AeronFramePublisher: Aeron C++ publication adapter (shared libaeron)
 AeronCommandSubscriber: OrderRequest/CancelRequest -> CtpAdapter
 ContractRuntime: long-running session/MD/command loop; account/position query thread
-main.cpp: --mode runtime
+main.cpp: CTP ORS runtime only; smoke tools are in ctp::ors_ctp_smoke
 ```
 
 Test stream layout (matching FastTrade `AccessConfig.singleChannel` base 9000):
