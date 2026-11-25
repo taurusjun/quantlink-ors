@@ -124,10 +124,21 @@ MD decoded with 20 levels; order submitted on Aeron 9002
 CTP OrderUpdate: NEW -> (exchange rejection) REJECTED
 ```
 
-The rejection was not an L1 wiring failure: the test ran after the SHFE night
-session closed (02:55 CST). The native `order-smoke` on the same CTP code also
-returned cancel rejection `当前状态禁止` and no trade. Runtime account/position
-queries are published by a separate thread, so they do not block session/MD.
+The early-night rejection was not an L1 wiring failure: the test ran after the
+SHFE night session closed. On 2026-11-25 11:02 CST, during the day session, the
+same path reached `NEW -> ACK -> FILLED` and emitted a Trade.
+
+The first live Trade frame exposed two C++/contract integration bugs, both fixed:
+
+```text
+trade.requestId was empty -> fill it from the order state
+snapshotTimestamp/ingestTimestamp were milliseconds -> emit epoch nanoseconds
+```
+
+The final Trade decode + fresh Account/Position assertion has to be re-run after
+the 11:30-13:30 lunch break; 11:33 orders were rejected by the closed exchange.
+Runtime account/position queries are published by a separate thread, so they do
+not block session/MD.
 
 An independent L1 snapshot client also verified the runtime query thread:
 
@@ -142,8 +153,8 @@ run**.
 ## 7. Known gaps
 
 ```text
-1. Live fill/cancel not yet re-run after the E2E wiring; the 02:55 CST run hit the
-   closed SHFE night session.
+1. Final live Trade decode + fresh Account/Position assertion after the timestamp
+   fix; the 11:33 CST run hit the lunch break.
 2. CtpReconciler is unit-tested but not wired into the reconnect loop.
 3. ContractRuntime uses test sourceSessionId=1/epoch=1 and test stream base 9000;
    production session/epoch durability is not implemented here.

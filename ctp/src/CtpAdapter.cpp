@@ -31,10 +31,10 @@ std::string text(const char (&field)[N]) {
   return std::string(field, length);
 }
 
-std::uint64_t epochMillis() {
+std::uint64_t epochNanos() {
   const auto elapsed = std::chrono::system_clock::now().time_since_epoch();
   return static_cast<std::uint64_t>(
-      std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count());
+      std::chrono::duration_cast<std::chrono::nanoseconds>(elapsed).count());
 }
 
 OrderStatus mapOrderStatus(char status) {
@@ -472,11 +472,15 @@ struct CtpAdapter::Impl {
       bufferTrade(report);
       return;
     }
+    std::string orderExchange;
     {
       std::lock_guard<std::mutex> lock(mutex_);
       OrderState& state = orders_[orderRef];
       state.filledNotional += report.price * report.qty;
+      orderExchange = state.exchange;
+      if (report.requestId.empty()) report.requestId = state.requestId;
     }
+    if (report.exchange.empty()) report.exchange = orderExchange;
     publishTrade(report);
   }
 
@@ -530,7 +534,8 @@ struct CtpAdapter::Impl {
     copyField(ctp.UserID, config.investorId);
     copyField(ctp.OrderRef, ctpRef);
     copyField(ctp.InstrumentID, request.instrumentId);
-    copyField(ctp.ExchangeID, request.exchange);
+    // CTP infers the exchange from the instrument; SimNow rejects a populated
+    // InputOrderField.ExchangeID for ordinary orders.
     ctp.OrderPriceType = request.orderType == OrderType::Market ? THOST_FTDC_OPT_AnyPrice
                                                                : THOST_FTDC_OPT_LimitPrice;
     ctp.Direction = ctpDirection(request.side);
@@ -699,7 +704,7 @@ struct CtpAdapter::Impl {
     {
       std::lock_guard<std::mutex> lock(mutex_);
       update.sequence = ++sequence_;
-      update.ingestTimestamp = epochMillis();
+      update.ingestTimestamp = epochNanos();
       update.accountId = session_.config().investorId;
       sink = sink_;
     }
@@ -713,7 +718,7 @@ struct CtpAdapter::Impl {
     {
       std::lock_guard<std::mutex> lock(mutex_);
       report.sequence = ++sequence_;
-      report.ingestTimestamp = epochMillis();
+      report.ingestTimestamp = epochNanos();
       report.accountId = session_.config().investorId;
       sink = sink_;
     }
@@ -725,7 +730,7 @@ struct CtpAdapter::Impl {
   void bufferUpdate(OrderUpdate update) {
     std::lock_guard<std::mutex> lock(mutex_);
     update.sequence = ++sequence_;
-    update.ingestTimestamp = epochMillis();
+    update.ingestTimestamp = epochNanos();
     update.accountId = session_.config().investorId;
     pendingUpdates_.push_back(std::move(update));
   }
@@ -746,7 +751,7 @@ struct CtpAdapter::Impl {
   void bufferTrade(Trade report) {
     std::lock_guard<std::mutex> lock(mutex_);
     report.sequence = ++sequence_;
-    report.ingestTimestamp = epochMillis();
+    report.ingestTimestamp = epochNanos();
     report.accountId = session_.config().investorId;
     pendingTrades_.push_back(std::move(report));
   }

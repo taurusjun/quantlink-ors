@@ -31,7 +31,7 @@ struct SnapshotHeader {
   std::string accountId;  ///< CTP InvestorID / ORS venue account
   std::string tradingDay;
   std::string snapshotId;
-  std::uint64_t snapshotTimestamp{0};  ///< epoch milliseconds
+  std::uint64_t snapshotTimestamp{0};  ///< epoch nanoseconds
   std::uint32_t staleAfterMs{kDefaultSnapshotStaleAfterMs};
 };
 

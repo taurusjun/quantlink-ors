@@ -39,6 +39,16 @@ ctest --test-dir build --output-on-failure
 
 不提供 `AERON_HOME` 或 `AERON_RUNTIME_HOME` 时 CMake 会直接报错，不再默认依赖 `/opt` 路径。
 
+Offset 语义：
+
+```text
+CTP ORS 只把 L2 已解析的最终 offsetFlag 1:1 映射到 CTP：
+OPEN / CLOSE / CLOSE_TODAY / CLOSE_YESTERDAY。
+SHFE/INE 的平今/平昨拆分由 L2 ExecutionOffsetPolicy 负责；
+CLOSE 在 SHFE/INE 表示平昨，平今必须显式 CLOSE_TODAY。
+非 SHFE/INE 的显式平今/平昨由 L2 拒绝，CTP ORS 不改写、不猜。
+```
+
 原则：
 
 ```text

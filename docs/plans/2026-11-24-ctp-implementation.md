@@ -23,6 +23,10 @@ orderRef 由 L2 分配，CTP adapter 映射到 CTP OrderRef
 CTP ModifyRequest 第一版明确 rejected
 行情 20 档，CTP 不足 5 档补零
 PositionSnapshot / AccountSnapshot 必需
+SHFE/INE 平今/平昨由 L2 ExecutionOffsetPolicy 解析，CTP ORS 只做 1:1 offsetFlag 映射
+非 SHFE/INE 的显式 CLOSE_TODAY/CLOSE_YESTERDAY 必须由 L2 拒绝，CTP ORS 不改写
+CTP error 51 不能作为 ORS 自动拆平今/平昨的依据
+快照 snapshotTimestamp 使用 epoch nanoseconds，staleAfterMs 使用毫秒
 只在 190 构建和测试
 ```
 
@@ -33,6 +37,7 @@ PositionSnapshot / AccountSnapshot 必需
 - CTP `OrderRef` 超过 12 位或重复时，必须拒绝，不能覆盖已有订单。
 - CTP 断线重连后旧 session 的回报不能写入新 epoch。
 - CTP 只有 5 档行情时，第 6–20 档必须是零，不能复制第 5 档。
+- CTP offset 只验证 1:1 映射；SHFE/INE 规则和跨交易所拒绝逻辑必须在 L2 测试。
 - 任何日志/异常都不能输出密码、AuthCode 或完整账户配置。
 
 ---

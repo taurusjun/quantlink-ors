@@ -236,6 +236,30 @@ void checkTimeInForceMapping() {
         "market maps to any price");
 }
 
+void checkOffsetMapping() {
+  Fixture fixture;
+  struct Case {
+    Offset offset;
+    char ctp;
+    const char* name;
+  };
+  const Case cases[] = {
+      {Offset::Open, THOST_FTDC_OF_Open, "open"},
+      {Offset::Close, THOST_FTDC_OF_Close, "close"},
+      {Offset::CloseToday, THOST_FTDC_OF_CloseToday, "close-today"},
+      {Offset::CloseYesterday, THOST_FTDC_OF_CloseYesterday, "close-yesterday"},
+  };
+  std::uint64_t orderRef = 20;
+  for (const Case& item : cases) {
+    OrderRequest request = baseRequest(orderRef++);
+    request.offsetFlag = item.offset;
+    check(fixture.adapter.onOrderRequest(request),
+          std::string(item.name) + " order is accepted");
+    check(fixture.sender.lastInsert.CombOffsetFlag[0] == item.ctp,
+          std::string(item.name) + " maps 1:1 to CTP");
+  }
+}
+
 void checkCancelAccepted() {
   Fixture fixture;
   check(fixture.adapter.onOrderRequest(baseRequest(7)), "the order is accepted");
@@ -477,6 +501,7 @@ void checkTradeAndAveragePrice() {
 int main() {
   checkInsertAccepted();
   checkTimeInForceMapping();
+  checkOffsetMapping();
   checkCancelAccepted();
   checkCancelReport();
   checkCancelRejected();
@@ -493,6 +518,6 @@ int main() {
     std::cerr << failures << " check(s) failed\n";
     return 1;
   }
-  std::cout << "ctp_adapter: insert, cancel, reports, modify rejection\n";
+  std::cout << "ctp_adapter: insert, offset, cancel, reports, modify rejection\n";
   return 0;
 }

@@ -21,9 +21,9 @@ void requestStop(int) {
   stopRequested.store(true, std::memory_order_relaxed);
 }
 
-std::uint64_t nowMillis() {
+std::uint64_t nowNanos() {
   return static_cast<std::uint64_t>(
-      std::chrono::duration_cast<std::chrono::milliseconds>(
+      std::chrono::duration_cast<std::chrono::nanoseconds>(
           std::chrono::system_clock::now().time_since_epoch()).count());
 }
 }  // namespace
@@ -75,8 +75,10 @@ struct ContractRuntime::Impl final : ExecutionSink, SnapshotSink {
   }
 
   void onTrade(const Trade& trade) override {
+    Trade copy = trade;
+    if (copy.exchange.empty()) copy.exchange = runtimeConfig.exchange;
     std::lock_guard<std::mutex> lock(sinkMutex);
-    sink.publishTrade(trade);
+    sink.publishTrade(copy);
   }
 
   void onSnapshot(const AccountSnapshot& snapshot) override {
@@ -104,7 +106,7 @@ struct ContractRuntime::Impl final : ExecutionSink, SnapshotSink {
     session.state = ready ? csbe::VenueSessionState::READY
                           : csbe::VenueSessionState::STARTING;
     session.reason = ready ? "" : trader.lastError();
-    session.snapshotTimestamp = nowMillis();
+    session.snapshotTimestamp = nowNanos();
     session.lastSeqByStream = {
         {static_cast<std::uint32_t>(runtimeConfig.streams.execution), adapter.sequence()},
         {static_cast<std::uint32_t>(runtimeConfig.streams.marketData), 0},
@@ -116,7 +118,7 @@ struct ContractRuntime::Impl final : ExecutionSink, SnapshotSink {
   int run() {
     std::signal(SIGINT, requestStop);
     std::signal(SIGTERM, requestStop);
-    if (!trader.start(std::chrono::seconds(120))) {
+    if (!trader.start(std::chrono::seconds(300))) {
       std::cerr << "runtime trader start failed: " << trader.lastError() << '\n';
       return 1;
     }

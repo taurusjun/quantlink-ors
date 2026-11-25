@@ -34,10 +34,10 @@ std::string text(const char (&field)[N]) {
   return std::string(field, length);
 }
 
-std::uint64_t epochMillis() {
+std::uint64_t epochNanos() {
   const auto elapsed = std::chrono::system_clock::now().time_since_epoch();
   return static_cast<std::uint64_t>(
-      std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count());
+      std::chrono::duration_cast<std::chrono::nanoseconds>(elapsed).count());
 }
 
 /// Quantity-weighted mean of two prices; 0 when neither side has quantity.
@@ -425,7 +425,7 @@ struct CtpQueryService::Impl {
     if (header.tradingDay.empty()) {
       header.tradingDay = rowTradingDay;
     }
-    header.snapshotTimestamp = epochMillis();
+    header.snapshotTimestamp = epochNanos();
     std::uint64_t sequence = 0;
     {
       std::lock_guard<std::mutex> lock(mutex_);
