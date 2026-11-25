@@ -39,13 +39,21 @@ target_include_directories(ors_ctp_config PUBLIC include)
 
 add_library(ors_ctp_core STATIC src/CtpTraderSession.cpp src/CtpMdSession.cpp
                                 src/CtpQueryService.cpp src/CtpOrderRefMap.cpp
-                                src/CtpAdapter.cpp src/CtpReconciler.cpp)
+                                src/CtpAdapter.cpp src/CtpReconciler.cpp src/TextEncoding.cpp)
 target_include_directories(ors_ctp_core PUBLIC include)
 target_link_libraries(ors_ctp_core PUBLIC ors_ctp_config PRIVATE CTP::trader CTP::md)
+find_library(ICONV_LIBRARY NAMES iconv)
+if(ICONV_LIBRARY)
+  target_link_libraries(ors_ctp_core PRIVATE "${ICONV_LIBRARY}")
+endif()
 
 add_executable(ors_ctp src/main.cpp)
 target_link_libraries(ors_ctp PRIVATE ors_ctp_core ors_aeron CTP::trader CTP::md
     "${AERON_LIB}" Threads::Threads ${CMAKE_DL_LIBS} rt)
+
+add_executable(ctp_text_encoding_test tests/TextEncodingTest.cpp)
+target_link_libraries(ctp_text_encoding_test PRIVATE ors_ctp_core)
+add_test(NAME ctp_text_encoding COMMAND ctp_text_encoding_test)
 
 add_executable(ctp_config_test tests/CtpConfigTest.cpp)
 target_link_libraries(ctp_config_test PRIVATE ors_ctp_config)

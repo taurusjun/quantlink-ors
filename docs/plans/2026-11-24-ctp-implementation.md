@@ -27,6 +27,8 @@ SHFE/INE 平今/平昨由 L2 ExecutionOffsetPolicy 解析，CTP ORS 只做 1:1 o
 非 SHFE/INE 的显式 CLOSE_TODAY/CLOSE_YESTERDAY 必须由 L2 拒绝，CTP ORS 不改写
 CTP error 51 不能作为 ORS 自动拆平今/平昨的依据
 快照 snapshotTimestamp 使用 epoch nanoseconds，staleAfterMs 使用毫秒
+sourceSessionId 默认每次启动生成；sourcePublicationEpoch 可配置，重连时递增
+CTP ErrorMsg/StatusMsg 在写入 L1 前从 GB18030 转 UTF-8
 只在 190 构建和测试
 ```
 

@@ -251,6 +251,17 @@ OnFrontDisconnected
 
 ---
 
+### 6.3 sourceSessionId / sourcePublicationEpoch / stream IDs
+
+```text
+sourceSessionId        runtime 启动标识；未配置时自动生成
+sourcePublicationEpoch  同一 runtime 的发布代数；默认 1
+stream IDs             由 --stream-base 整组配置
+```
+
+真实重连时必须递增 `sourcePublicationEpoch` 并重新发布 `VenueSession`；旧 epoch
+的 OrderUpdate/Trade 必须丢弃。当前 CTP runtime 的自动重连接线仍属于后续工作。
+
 ## 7. 订单与 ID
 
 CTP 字段：
@@ -388,6 +399,7 @@ PositionSnapshot
 accountId = CTP InvestorID / ORS venue account
 snapshotId / snapshotTimestamp / staleAfterMs 必须完整
 snapshotTimestamp 使用 epoch nanoseconds；staleAfterMs 使用毫秒
+sourceSessionId 默认每次启动生成；sourcePublicationEpoch 可配置，重连时递增
 查询失败 -> session DEGRADED，不伪造空快照
 快照过期 -> 消费方按 staleAfterMs 判断
 ```

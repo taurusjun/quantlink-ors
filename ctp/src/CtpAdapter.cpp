@@ -1,5 +1,6 @@
 #include "ors/ctp/CtpAdapter.h"
 #include "ors/ctp/PriceSanitize.h"
+#include "ors/ctp/TextEncoding.h"
 
 #include <ThostFtdcTraderApi.h>
 
@@ -320,7 +321,7 @@ struct CtpAdapter::Impl {
     update.orderQty = order->VolumeTotalOriginal;
     update.price = sanitizePrice(order->LimitPrice);
     update.exchange = text(order->ExchangeID);
-    update.reason = text(info->ErrorMsg);
+    update.reason = gbkToUtf8(text(info->ErrorMsg));
     update.errorCode = info->ErrorID;
     update.tradingDay = session_.tradingDay();
     if (orderRef == 0) {
@@ -345,7 +346,7 @@ struct CtpAdapter::Impl {
       return;
     }
     OrderState state = stateOf(orderRef);
-    rejectCancel(orderRef, state, text(info->ErrorMsg), info->ErrorID);
+    rejectCancel(orderRef, state, gbkToUtf8(text(info->ErrorMsg)), info->ErrorID);
   }
 
   void onErrorOrderAction(const CThostFtdcOrderActionField* action,
@@ -360,7 +361,7 @@ struct CtpAdapter::Impl {
       return;
     }
     OrderState state = stateOf(orderRef);
-    rejectCancel(orderRef, state, text(info->ErrorMsg), info->ErrorID);
+    rejectCancel(orderRef, state, gbkToUtf8(text(info->ErrorMsg)), info->ErrorID);
   }
 
   void onRtnOrder(const CThostFtdcOrderField* order) {
@@ -382,7 +383,7 @@ struct CtpAdapter::Impl {
       update.filledQty = order->VolumeTraded;
       update.remainingQty = order->VolumeTotal;
       update.price = sanitizePrice(order->LimitPrice);
-      update.reason = text(order->StatusMsg);
+      update.reason = gbkToUtf8(text(order->StatusMsg));
       update.tradingDay = text(order->TradingDay);
       bufferUpdate(update);
       return;
@@ -393,7 +394,7 @@ struct CtpAdapter::Impl {
     const std::string instrument = text(order->InstrumentID);
     const std::string exchange = text(order->ExchangeID);
     const std::string tradingDay = text(order->TradingDay);
-    const std::string statusMsg = text(order->StatusMsg);
+    const std::string statusMsg = gbkToUtf8(text(order->StatusMsg));
     const int volumeTraded = order->VolumeTraded;
     const int volumeTotal = order->VolumeTotal;
     const int volumeOriginal = order->VolumeTotalOriginal;
@@ -742,7 +743,7 @@ struct CtpAdapter::Impl {
     update.status = OrderStatus::Rejected;
     update.cancelState = CancelState::Rejected;
     update.exchange = exchange;
-    update.reason = text(info->ErrorMsg);
+    update.reason = gbkToUtf8(text(info->ErrorMsg));
     update.errorCode = info->ErrorID;
     update.tradingDay = session_.tradingDay();
     bufferUpdate(update);

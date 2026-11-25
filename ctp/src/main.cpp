@@ -469,6 +469,8 @@ int main(int argc, char** argv) {
   std::string orsId = "ors-ctp-1";
   std::string environment = "SHADOW";
   std::string exchange = "SHFE";
+  unsigned long long sourceSessionId = 0;
+  unsigned long long sourcePublicationEpoch = 1;
   int streamBase = 9000;
   for (int index = 1; index < argc; ++index) {
     const std::string argument = argv[index];
@@ -500,6 +502,10 @@ int main(int argc, char** argv) {
       environment = argv[++index];
     } else if (argument == "--exchange" && index + 1 < argc) {
       exchange = argv[++index];
+    } else if (argument == "--source-session-id" && index + 1 < argc) {
+      sourceSessionId = std::stoull(argv[++index]);
+    } else if (argument == "--source-publication-epoch" && index + 1 < argc) {
+      sourcePublicationEpoch = std::stoull(argv[++index]);
     } else if (argument == "--stream-base" && index + 1 < argc) {
       streamBase = std::stoi(argv[++index]);
     } else if (argument == "--help" || argument == "-h") {
@@ -557,6 +563,8 @@ int main(int argc, char** argv) {
       runtimeConfig.orsId = orsId;
       runtimeConfig.environment = environment;
       runtimeConfig.exchange = exchange;
+      runtimeConfig.sourceSessionId = sourceSessionId;
+      runtimeConfig.sourcePublicationEpoch = sourcePublicationEpoch;
       runtimeConfig.instruments = splitList(instrumentList);
       runtimeConfig.orderStream = streamBase + 2;
       runtimeConfig.cancelStream = streamBase + 3;

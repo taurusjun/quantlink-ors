@@ -58,8 +58,8 @@ struct ContractRuntime::Impl final : ExecutionSink, SnapshotSink {
             .accountId = config.investorId,
             .orsId = runtimeConfig.orsId,
             .environment = runtimeConfig.environment,
-            .sourceSessionId = 1,
-            .sourcePublicationEpoch = 1,
+            .sourceSessionId = runtimeConfig.sourceSessionId,
+            .sourcePublicationEpoch = runtimeConfig.sourcePublicationEpoch,
             .streams = runtimeConfig.streams}),
         md(config),
         queries(trader),
@@ -136,6 +136,8 @@ struct ContractRuntime::Impl final : ExecutionSink, SnapshotSink {
     std::cerr << "runtime READY venue=" << runtimeConfig.venueId
               << " account=" << config.investorId
               << " ors=" << runtimeConfig.orsId
+              << " sourceSession=" << runtimeConfig.sourceSessionId
+              << " epoch=" << runtimeConfig.sourcePublicationEpoch
               << " streams=" << runtimeConfig.streams.execution
               << "," << runtimeConfig.streams.marketData << '\n';
     publishSession();
@@ -191,8 +193,11 @@ struct ContractRuntime::Impl final : ExecutionSink, SnapshotSink {
   }
 };
 
-ContractRuntime::ContractRuntime(CtpConfig config, ContractRuntimeConfig runtimeConfig)
-    : impl_(std::make_unique<Impl>(std::move(config), std::move(runtimeConfig))) {}
+ContractRuntime::ContractRuntime(CtpConfig config, ContractRuntimeConfig runtimeConfig) {
+  if (runtimeConfig.sourceSessionId == 0) runtimeConfig.sourceSessionId = nowNanos();
+  if (runtimeConfig.sourcePublicationEpoch == 0) runtimeConfig.sourcePublicationEpoch = 1;
+  impl_ = std::make_unique<Impl>(std::move(config), std::move(runtimeConfig));
+}
 
 ContractRuntime::~ContractRuntime() = default;
 

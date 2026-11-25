@@ -1,4 +1,5 @@
 #include "ors/ctp/CtpSession.h"
+#include "ors/ctp/TextEncoding.h"
 #include "ors/ctp/PriceSanitize.h"
 
 #include <ThostFtdcMdApi.h>
@@ -33,7 +34,7 @@ std::string errorText(const CThostFtdcRspInfoField* info) {
   if (info == nullptr) {
     return "no error info";
   }
-  return std::to_string(info->ErrorID) + " " + info->ErrorMsg;
+  return std::to_string(info->ErrorID) + " " + gbkToUtf8(info->ErrorMsg);
 }
 
 std::string flowPathWithSlash(const std::string& path) {

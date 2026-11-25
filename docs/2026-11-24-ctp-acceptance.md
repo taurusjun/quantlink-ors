@@ -24,7 +24,7 @@ ctest --test-dir build --output-on-failure
 Result:
 
 ```text
-100% tests passed, 0 tests failed out of 13
+100% tests passed, 0 tests failed out of 14
 ```
 
 Covered:
@@ -137,6 +137,15 @@ snapshotTimestamp/ingestTimestamp were milliseconds -> emit epoch nanoseconds
 
 The final Trade decode + fresh Account/Position assertion has to be re-run after
 the 11:30-13:30 lunch break; 11:33 orders were rejected by the closed exchange.
+
+Also completed after that run:
+
+```text
+CTP ErrorMsg/StatusMsg GB18030 -> UTF-8 conversion + unit test
+sourceSessionId generated per runtime start; sourcePublicationEpoch configurable
+AccessSmoke takes sourceSessionId/epoch from the live VenueSession
+ctest: 14/14 PASS
+```
 Runtime account/position queries are published by a separate thread, so they do
 not block session/MD.
 
@@ -156,10 +165,11 @@ run**.
 1. Final live Trade decode + fresh Account/Position assertion after the timestamp
    fix; the 11:33 CST run hit the lunch break.
 2. CtpReconciler is unit-tested but not wired into the reconnect loop.
-3. ContractRuntime uses test sourceSessionId=1/epoch=1 and test stream base 9000;
-   production session/epoch durability is not implemented here.
+3. sourceSessionId is generated per start and epoch is configurable, but automatic
+   epoch increment on reconnect still belongs to the C reconnect work.
 4. Manual disconnect/reconnect and stale-report discard smoke was not run.
-5. CTP ErrorMsg is GBK; the contracted reason string is still garbled on the L1 wire.
+5. GBK -> UTF-8 conversion and its unit test are done; a live CTP error reason
+   assertion on the L1 wire is still pending.
 ```
 
 Therefore this acceptance is **PARTIAL**, not a production L1 end-to-end sign-off.

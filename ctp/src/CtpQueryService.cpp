@@ -1,4 +1,5 @@
 #include "ors/ctp/CtpQueryService.h"
+#include "ors/ctp/TextEncoding.h"
 #include "ors/ctp/PriceSanitize.h"
 
 #include <ThostFtdcTraderApi.h>
@@ -459,7 +460,7 @@ struct CtpQueryService::Impl {
     if (info == nullptr) {
       return "no error info";
     }
-    return std::to_string(info->ErrorID) + " " + text(info->ErrorMsg);
+    return std::to_string(info->ErrorID) + " " + gbkToUtf8(text(info->ErrorMsg));
   }
 
   /// Ends the pending query with an error; all buffered rows are dropped.

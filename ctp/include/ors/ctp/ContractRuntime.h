@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
@@ -15,6 +16,8 @@ struct ContractRuntimeConfig {
   std::string orsId{"ors-ctp-1"};
   std::string environment{"SHADOW"};
   std::string exchange{"SHFE"};
+  std::uint64_t sourceSessionId{0};        ///< 0 = generate one per runtime start
+  std::uint64_t sourcePublicationEpoch{1};
   std::vector<std::string> instruments;
   ContractStreams streams{9004, 9005, 9006, 9007, 9001};
   int orderStream{9002};
