@@ -209,6 +209,16 @@ Note: duplicate protection was observed at the CtpAdapter orderRef map. The
 runtime `allowsNewOrder` policy and `setEpoch`/cancel-rejection paths now have
 unit tests; a live duplicate that bypasses the adapter map is still not injected.
 
+Three-cycle reconnect stability run (2026-11-25 15:15-15:21):
+
+```text
+cycle 1: block 120s -> reconciliation complete epoch=2
+cycle 2: block 120s -> reconciliation complete epoch=3
+cycle 3: block 120s -> reconciliation complete epoch=4
+```
+
+Each cycle returned READY; no iptables rules or runtime process remained.
+
 ## 7. Known gaps
 
 ```text
