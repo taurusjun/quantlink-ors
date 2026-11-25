@@ -15,6 +15,7 @@
 #include "ors/ctp/CtpConfig.h"
 #include "ors/ctp/CtpQueryService.h"
 #include "ors/ctp/CtpSession.h"
+#include "ors/ctp/StringList.h"
 
 namespace {
 
@@ -30,6 +31,7 @@ using ors::ctp::OrderStatus;
 using ors::ctp::OrderType;
 using ors::ctp::OrderUpdate;
 using ors::ctp::Side;
+using ors::ctp::splitList;
 using ors::ctp::TimeInForce;
 using ors::ctp::Trade;
 
@@ -51,25 +53,6 @@ void usage() {
                "                          --instruments entry, cancel it once the\n"
                "                          venue acknowledged it, print every\n"
                "                          OrderUpdate/Trade. Dry-run unless --live\n";
-}
-
-std::vector<std::string> splitList(const std::string& value) {
-  std::vector<std::string> items;
-  std::string current;
-  for (const char character : value) {
-    if (character == ',' || character == ' ') {
-      if (!current.empty()) {
-        items.push_back(current);
-        current.clear();
-      }
-    } else {
-      current.push_back(character);
-    }
-  }
-  if (!current.empty()) {
-    items.push_back(current);
-  }
-  return items;
 }
 
 /// One "price@qty" per level, so the smoke output shows where CTP data stops.

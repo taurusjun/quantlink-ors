@@ -62,6 +62,35 @@ CLOSE 在 SHFE/INE 表示平昨，平今必须显式 CLOSE_TODAY。
 每个 cycle 会短时阻断 CTP front，要求 runtime 重新出现 `reconciliation complete`，
 结果写到 `/tmp/ors-reconnect-stability.log`。
 
+运行时配置（`ors_ctp --config PATH` 只接受一个参数；身份和 stream 全部来自文件）：
+
+```ini
+ORS_ID = ors-ctp-simnow-01
+ENVIRONMENT = SHADOW
+VENUE_ID = SIMNOW
+EXCHANGE = SHFE
+AERON_DIR = /var/lib/quantlink-fin/aeron
+INSTRUMENTS = au2612
+STREAM_BASE = 9000
+SOURCE_PUBLICATION_EPOCH = 1
+# SOURCE_SESSION_ID = 0
+# QUERY_INTERVAL_SECONDS = 1
+```
+
+`STREAM_BASE=9000` 对应：
+
+```text
+base+1 market data, base+2 order, base+3 cancel,
+base+4 execution, base+5 position, base+6 account, base+7 session
+```
+
+`AERON_DIR`、`VENUE_ID`、`ORS_ID`、`ENVIRONMENT`、`EXCHANGE`、`INSTRUMENTS`、
+`STREAM_BASE`、`SOURCE_PUBLICATION_EPOCH` 缺一不可；代码里没有 `SIMNOW` 之类
+的默认身份。
+
+每个 cycle 会短时阻断 CTP front，要求 runtime 重新出现 `reconciliation complete`，
+结果写到 `/tmp/ors-reconnect-stability.log`。
+
 原则：
 
 ```text

@@ -34,7 +34,8 @@ target_link_libraries(ors_aeron PUBLIC ors_contract ors_ctp_core "${AERON_LIB}"
 target_compile_features(ors_aeron PUBLIC cxx_std_20)
 
 # CtpConfig has no SDK dependency, so its unit test runs without the CTP .so.
-add_library(ors_ctp_config STATIC src/CtpConfig.cpp)
+add_library(ors_ctp_config STATIC src/CtpConfig.cpp src/ConfigFile.cpp
+                                     src/StringList.cpp src/RuntimeConfig.cpp)
 target_include_directories(ors_ctp_config PUBLIC include)
 
 add_library(ors_ctp_core STATIC src/CtpTraderSession.cpp src/CtpMdSession.cpp
@@ -62,6 +63,10 @@ add_test(NAME ctp_text_encoding COMMAND ctp_text_encoding_test)
 add_executable(ctp_config_test tests/CtpConfigTest.cpp)
 target_link_libraries(ctp_config_test PRIVATE ors_ctp_config)
 add_test(NAME ctp_config COMMAND ctp_config_test)
+
+add_executable(ctp_runtime_config_test tests/RuntimeConfigTest.cpp)
+target_link_libraries(ctp_runtime_config_test PRIVATE ors_ctp_config)
+add_test(NAME ctp_runtime_config COMMAND ctp_runtime_config_test)
 
 add_executable(ctp_price_sanitize_test tests/PriceSanitizeTest.cpp)
 target_include_directories(ctp_price_sanitize_test PRIVATE include)

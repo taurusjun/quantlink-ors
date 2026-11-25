@@ -1,5 +1,7 @@
+#include <exception>
 #include <iostream>
 #include <string>
+#include <utility>
 
 #include "ors/ctp/CtpConfig.h"
 #include "ors/ctp/ContractRuntime.h"
@@ -19,24 +21,30 @@ void usage() {
 }  // namespace
 
 int main(int argc, char** argv) {
+  if (argc == 1) {
+    usage();
+    return 0;
+  }
+
   std::string configPath;
   for (int index = 1; index < argc; ++index) {
     const std::string argument = argv[index];
-    if (argument == "--config" && index + 1 < argc) {
-      configPath = argv[++index];
-    } else if (argument == "--help" || argument == "-h") {
+    if (argument == "--help" || argument == "-h") {
       usage();
       return 0;
-    } else {
-      std::cerr << "unknown or incomplete option: " << argument << '\n';
-      usage();
-      return 2;
     }
+    if (argument == "--config" && index + 1 < argc && configPath.empty()) {
+      configPath = argv[++index];
+      continue;
+    }
+    std::cerr << "unknown or incomplete option: " << argument << '\n';
+    usage();
+    return 2;
   }
 
   if (configPath.empty()) {
     usage();
-    return 0;
+    return 2;
   }
 
   try {

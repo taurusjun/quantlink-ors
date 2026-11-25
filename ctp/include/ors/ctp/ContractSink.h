@@ -9,6 +9,7 @@
 #include "com_quantlink_contract_sbe/GatewayState.h"
 #include "com_quantlink_contract_sbe/SettlementState.h"
 #include "com_quantlink_contract_sbe/VenueSessionState.h"
+#include "ors/ctp/ContractStreams.h"
 #include "ors/ctp/CtpAdapter.h"
 #include "ors/ctp/CtpQueryService.h"
 #include "ors/ctp/CtpSession.h"
@@ -16,15 +17,6 @@
 namespace csbe = com::quantlink::contract::sbe;
 
 namespace ors::ctp {
-
-/// Stream ids are the contract defaults; deployment may override them.
-struct ContractStreams {
-  int execution{2003};
-  int position{2004};
-  int account{2005};
-  int session{2006};
-  int marketData{1001};
-};
 
 /// Identity and epoch context shared by every contract message in one session.
 struct ContractContext {

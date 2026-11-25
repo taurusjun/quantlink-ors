@@ -1,17 +1,12 @@
 #include "ors/ctp/ContractRuntime.h"
 
 #include <atomic>
-#include <cctype>
 #include <chrono>
 #include <csignal>
-#include <fstream>
 #include <iostream>
-#include <limits>
 #include <mutex>
-#include <stdexcept>
-#include <string_view>
 #include <thread>
-#include <unordered_map>
+#include <utility>
 
 #include "ors/ctp/AeronCommandSubscriber.h"
 #include "ors/ctp/AeronPublisher.h"
@@ -34,136 +29,7 @@ std::uint64_t nowNanos() {
           std::chrono::system_clock::now().time_since_epoch()).count());
 }
 
-std::string trim(std::string_view value) {
-  auto isSpace = [](char c) { return std::isspace(static_cast<unsigned char>(c)) != 0; };
-  while (!value.empty() && isSpace(value.front())) {
-    value.remove_prefix(1);
-  }
-  while (!value.empty() && isSpace(value.back())) {
-    value.remove_suffix(1);
-  }
-  return std::string(value);
-}
-
-std::string get(const std::unordered_map<std::string, std::string>& values,
-                const std::string& key) {
-  const auto found = values.find(key);
-  return found == values.end() ? std::string() : found->second;
-}
-
-std::string require(const std::unordered_map<std::string, std::string>& values,
-                    const std::string& key) {
-  const std::string value = get(values, key);
-  if (value.empty()) {
-    throw std::runtime_error("ors runtime config: " + key + " is required");
-  }
-  return value;
-}
-
-std::uint64_t requireUnsigned(const std::unordered_map<std::string, std::string>& values,
-                              const std::string& key) {
-  const std::string text = require(values, key);
-  std::size_t used = 0;
-  unsigned long long value = 0;
-  try {
-    value = std::stoull(text, &used);
-  } catch (const std::exception&) {
-    throw std::runtime_error("ors runtime config: " + key + " must be an unsigned integer");
-  }
-  if (used != text.size()) {
-    throw std::runtime_error("ors runtime config: " + key + " must be an unsigned integer");
-  }
-  return static_cast<std::uint64_t>(value);
-}
-
-int requirePositiveInt(const std::unordered_map<std::string, std::string>& values,
-                       const std::string& key) {
-  const std::string text = require(values, key);
-  std::size_t used = 0;
-  int value = 0;
-  try {
-    value = std::stoi(text, &used);
-  } catch (const std::exception&) {
-    throw std::runtime_error("ors runtime config: " + key + " must be a positive integer");
-  }
-  if (used != text.size() || value <= 0) {
-    throw std::runtime_error("ors runtime config: " + key + " must be a positive integer");
-  }
-  return value;
-}
-
-std::vector<std::string> splitList(const std::string& value) {
-  std::vector<std::string> items;
-  std::string current;
-  for (const char character : value) {
-    if (character == ',' || character == ' ') {
-      if (!current.empty()) {
-        items.push_back(current);
-        current.clear();
-      }
-    } else {
-      current.push_back(character);
-    }
-  }
-  if (!current.empty()) {
-    items.push_back(current);
-  }
-  return items;
-}
 }  // namespace
-
-ContractRuntimeConfig ContractRuntimeConfig::load(const std::string& path) {
-  std::ifstream in(path);
-  if (!in) {
-    throw std::runtime_error("ors runtime config: cannot open " + path);
-  }
-
-  std::unordered_map<std::string, std::string> values;
-  std::string line;
-  while (std::getline(in, line)) {
-    const auto hash = line.find('#');
-    if (hash != std::string::npos) {
-      line = line.substr(0, hash);
-    }
-    const auto equals = line.find('=');
-    if (equals == std::string::npos) {
-      continue;
-    }
-    const std::string key = trim(std::string_view(line).substr(0, equals));
-    if (!key.empty()) {
-      values[key] = trim(std::string_view(line).substr(equals + 1));
-    }
-  }
-
-  ContractRuntimeConfig config;
-  config.aeronDir = require(values, "AERON_DIR");
-  config.venueId = require(values, "VENUE_ID");
-  config.orsId = require(values, "ORS_ID");
-  config.environment = require(values, "ENVIRONMENT");
-  config.exchange = require(values, "EXCHANGE");
-  config.instruments = splitList(require(values, "INSTRUMENTS"));
-  if (config.instruments.empty()) {
-    throw std::runtime_error("ors runtime config: INSTRUMENTS is required");
-  }
-  config.sourcePublicationEpoch = requireUnsigned(values, "SOURCE_PUBLICATION_EPOCH");
-  if (values.find("SOURCE_SESSION_ID") != values.end()) {
-    config.sourceSessionId = requireUnsigned(values, "SOURCE_SESSION_ID");
-  }
-
-  const int streamBase = requirePositiveInt(values, "STREAM_BASE");
-  if (streamBase > std::numeric_limits<int>::max() - 7) {
-    throw std::runtime_error("ors runtime config: STREAM_BASE is too large");
-  }
-  config.orderStream = streamBase + 2;
-  config.cancelStream = streamBase + 3;
-  config.streams = {streamBase + 4, streamBase + 5, streamBase + 6,
-                    streamBase + 7, streamBase + 1};
-
-  if (values.find("QUERY_INTERVAL_SECONDS") != values.end()) {
-    config.queryIntervalSeconds = requirePositiveInt(values, "QUERY_INTERVAL_SECONDS");
-  }
-  return config;
-}
 
 struct ContractRuntime::Impl final : ExecutionSink, SnapshotSink {
   CtpConfig config;

@@ -256,8 +256,8 @@ OnFrontDisconnected
 
 ```text
 sourceSessionId        runtime 启动标识；未配置时自动生成
-sourcePublicationEpoch  同一 runtime 的发布代数；默认 1
-stream IDs             由 --stream-base 整组配置
+sourcePublicationEpoch  同一 runtime 的发布代数；配置项必填
+stream IDs            由 STREAM_BASE 按固定布局整组生成
 ```
 
 真实重连时必须递增 `sourcePublicationEpoch` 并重新发布 `VenueSession`；旧 epoch
@@ -503,7 +503,14 @@ quantlink-ors/tools/gen_contract_cpp.sh
 ```ini
 ORS_ID = ors-ctp-simnow-01
 ENVIRONMENT = SHADOW
-VENUE = CTP
+VENUE_ID = SIMNOW
+EXCHANGE = SHFE
+
+AERON_DIR = /var/lib/quantlink-fin/aeron
+STREAM_BASE = 9000
+SOURCE_PUBLICATION_EPOCH = 1
+# SOURCE_SESSION_ID = 0        ; 0/省略时启动生成
+# QUERY_INTERVAL_SECONDS = 1
 
 BROKER_ID = 9999
 INVESTOR_ID = <simnow-investor>
@@ -517,7 +524,7 @@ MD_FRONT = tcp://...
 TRADER_FLOW_PATH = state/ctp/trader
 MD_FLOW_PATH = state/ctp/md
 
-INSTRUMENTS = ...
+INSTRUMENTS = au2612,ag2612
 ```
 
 敏感项只从环境变量或权限受控文件读取。
