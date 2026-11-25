@@ -196,11 +196,23 @@ runtime reconciliation complete epoch=2
 post-reconnect order reached ACK (price did not fill)
 ```
 
+Strong reconciliation scenario (2026-11-25 14:38-14:56):
+
+```text
+OPEN order 400000001 @730.0 -> ACK
+network drop 120s -> epoch=2 -> reconciliation complete
+re-submit same orderRef -> REJECTED (orderRef already in use)
+cancel original -> CANCELED
+```
+
+Note: duplicate protection was observed at the CtpAdapter orderRef map; the
+CtpReconciler canSubmit gate was not independently observable in this run.
+
 ## 7. Known gaps
 
 ```text
-1. Strong old-epoch report isolation (stale CTP callbacks) and duplicate-orderRef
-   behavior after reopening a known OPEN order still need a dedicated test.
+1. Strong old-epoch report isolation (stale CTP callbacks) still needs a dedicated
+   test; duplicate orderRef is protected by the adapter map.
 2. GBK -> UTF-8 conversion and unit test are done; console rendering depends on
    the JVM output encoding.
 ```
