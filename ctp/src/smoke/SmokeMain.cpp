@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <cstdio>
 #include <exception>
+#include <functional>
 #include <iostream>
 #include <mutex>
 #include <sstream>
@@ -18,6 +19,7 @@
 #include "ors/ctp/CtpConfig.h"
 #include "ors/ctp/CtpQueryService.h"
 #include "ors/ctp/CtpSession.h"
+#include "ors/ctp/SmokeLifecycle.h"
 #include "ors/ctp/StringList.h"
 
 namespace {
@@ -26,6 +28,7 @@ using ors::ctp::CancelRequest;
 using ors::ctp::CancelState;
 using ors::ctp::CtpAdapter;
 using ors::ctp::CtpConfig;
+using ors::ctp::CtpQueryService;
 using ors::ctp::CtpTraderSession;
 using ors::ctp::ExecutionSink;
 using ors::ctp::Offset;
@@ -34,8 +37,10 @@ using ors::ctp::OrderStatus;
 using ors::ctp::OrderType;
 using ors::ctp::OrderUpdate;
 using ors::ctp::Side;
+using ors::ctp::SmokeLifecycleVenue;
 using ors::ctp::splitList;
 using ors::ctp::TimeInForce;
+using ors::ctp::runSmokeLifecycle;
 using ors::ctp::Trade;
 
 template <std::size_t N>
@@ -65,7 +70,10 @@ void usage() {
                "                          place one resting order, send an invalid\n"
                "                          ReqOrderAction to provoke a real CTP\n"
                "                          cancel reject, then clean up with a\n"
-               "                          normal cancel. Requires --live\n";
+               "                          normal cancel. Requires --live\n"
+               "  --mode lifecycle-smoke  one CTP login for both cancel-reject\n"
+               "                          and fill lifecycles, then account/position\n"
+               "                          query. Requires --live and --fill-price\n";
 }
 
 /// One "price@qty" per level, so the smoke output shows where CTP data stops.
@@ -574,6 +582,188 @@ int cancelRejectSmoke(const std::string& configPath,
   return printer.lastStatus() == OrderStatus::Canceled ? 0 : 1;
 }
 
+/// One login, both order lifecycles, then account/position snapshots.
+struct CallbackLifecycleVenue final : SmokeLifecycleVenue {
+  std::function<bool()> loginFn;
+  std::function<bool()> cancelFn;
+  std::function<bool()> fillFn;
+  std::function<bool()> queryFn;
+
+  bool login() override { return loginFn && loginFn(); }
+  bool cancelCase() override { return cancelFn && cancelFn(); }
+  bool fillCase() override { return fillFn && fillFn(); }
+  bool querySnapshots() override { return queryFn && queryFn(); }
+};
+
+int lifecycleSmoke(const std::string& configPath,
+                   const std::vector<std::string>& instruments,
+                   const std::string& restingPriceText,
+                   const std::string& fillPriceText,
+                   const std::string& qtyText) {
+  if (instruments.size() != 1) {
+    std::cerr << "--instruments must name exactly one instrument for "
+                 "--mode lifecycle-smoke\n";
+    return 2;
+  }
+  double restingPrice = 0.0;
+  double fillPrice = 0.0;
+  int qty = 0;
+  if (!parsePrice(restingPriceText, restingPrice) || restingPrice <= 0.0) {
+    std::cerr << "--price must be a positive resting price\n";
+    return 2;
+  }
+  if (!parsePrice(fillPriceText, fillPrice) || fillPrice <= 0.0) {
+    std::cerr << "--fill-price must be a positive marketable price\n";
+    return 2;
+  }
+  if (!parseQty(qtyText, qty) || qty <= 0) {
+    std::cerr << "--qty must be a positive integer\n";
+    return 2;
+  }
+
+  const std::string& instrument = instruments.front();
+  const CtpConfig config = CtpConfig::load(configPath);
+  std::cout << "config: " << config.summary() << '\n';
+
+  CtpTraderSession session(config);
+  std::unique_ptr<CtpAdapter> adapter;
+  std::string exchange;
+
+  CallbackLifecycleVenue venue;
+  venue.loginFn = [&]() {
+    if (!session.start(std::chrono::seconds(300))) {
+      std::cerr << "FAILED: " << session.lastError() << '\n';
+      return false;
+    }
+    std::cout << toString(session.state())
+              << " instruments=" << session.instruments().size() << '\n';
+    for (const auto& listed : session.instruments()) {
+      if (listed.instrumentId == instrument) {
+        exchange = listed.exchangeId;
+        break;
+      }
+    }
+    adapter = std::make_unique<CtpAdapter>(session);
+    return true;
+  };
+
+  venue.cancelFn = [&]() {
+    ExecutionPrinter printer;
+    adapter->setSink(&printer);
+    OrderRequest request;
+    request.orderRef = 1;
+    request.instrumentId = instrument;
+    request.side = Side::Buy;
+    request.offsetFlag = Offset::Open;
+    request.orderType = OrderType::Limit;
+    request.timeInForce = TimeInForce::Day;
+    request.price = restingPrice;
+    request.qty = qty;
+    request.requestId = "lifecycle-cancel-order";
+    if (!adapter->onOrderRequest(request)) {
+      std::cerr << "FAILED: cancel case insert: " << adapter->lastError() << '\n';
+      return false;
+    }
+    if (!printer.waitForUpdates(2, std::chrono::seconds(10))) {
+      std::cerr << "FAILED: cancel case no venue report\n";
+      return false;
+    }
+    if (printer.isTerminal()) {
+      std::cerr << "FAILED: resting order became terminal; choose a farther --price\n";
+      return false;
+    }
+
+    CThostFtdcInputOrderActionField action{};
+    copyField(action.BrokerID, config.brokerId);
+    copyField(action.InvestorID, config.investorId);
+    copyField(action.UserID, config.investorId);
+    copyField(action.OrderRef, std::to_string(request.orderRef));
+    copyField(action.InstrumentID, instrument);
+    copyField(action.ExchangeID, exchange);
+    action.ActionFlag = THOST_FTDC_AF_Delete;
+    action.FrontID = 0;
+    action.SessionID = 0;
+    CThostFtdcTraderApi* api = session.traderApi();
+    if (api == nullptr || api->ReqOrderAction(&action, session.nextRequestId()) != 0) {
+      std::cerr << "FAILED: invalid cancel request was rejected locally\n";
+      return false;
+    }
+    if (!printer.waitForCancelOutcome(std::chrono::seconds(10)) ||
+        printer.lastCancelState() != CancelState::Rejected) {
+      std::cerr << "FAILED: no real cancel reject\n";
+      return false;
+    }
+    const int beforeCleanup = printer.updateCount();
+    CancelRequest cleanup;
+    cleanup.orderRef = request.orderRef;
+    cleanup.instrumentId = instrument;
+    cleanup.requestId = "lifecycle-cancel-cleanup";
+    if (!adapter->onCancelRequest(cleanup) ||
+        !printer.waitForUpdates(beforeCleanup + 1, std::chrono::seconds(10)) ||
+        printer.lastStatus() != OrderStatus::Canceled) {
+      std::cerr << "FAILED: cleanup cancel did not reach CANCELED\n";
+      return false;
+    }
+    std::cout << "CANCEL-CASE rejected=true cleanup=CANCELED\n";
+    adapter->setSink(nullptr);
+    return true;
+  };
+
+  venue.fillFn = [&]() {
+    ExecutionPrinter printer;
+    adapter->setSink(&printer);
+    OrderRequest request;
+    request.orderRef = 2;
+    request.instrumentId = instrument;
+    request.side = Side::Buy;
+    request.offsetFlag = Offset::Open;
+    request.orderType = OrderType::Limit;
+    request.timeInForce = TimeInForce::Day;
+    request.price = fillPrice;
+    request.qty = qty;
+    request.requestId = "lifecycle-fill-order";
+    if (!adapter->onOrderRequest(request)) {
+      std::cerr << "FAILED: fill case insert: " << adapter->lastError() << '\n';
+      return false;
+    }
+    if (!printer.waitForUpdates(2, std::chrono::seconds(10))) {
+      std::cerr << "FAILED: fill case no venue report\n";
+      return false;
+    }
+    if (printer.lastStatus() != OrderStatus::Filled) {
+      CancelRequest cleanup;
+      cleanup.orderRef = request.orderRef;
+      cleanup.instrumentId = instrument;
+      cleanup.requestId = "lifecycle-fill-cleanup";
+      (void)adapter->onCancelRequest(cleanup);
+      printer.waitForUpdates(printer.updateCount() + 1, std::chrono::seconds(10));
+      std::cerr << "FAILED: fill order did not fill; choose a marketable --fill-price\n";
+      return false;
+    }
+    if (printer.trades() == 0) printer.waitForTrade(std::chrono::seconds(2));
+    if (printer.trades() == 0) {
+      std::cerr << "FAILED: FILLED without Trade\n";
+      return false;
+    }
+    std::cout << "FILL-CASE status=FILLED trades=" << printer.trades() << '\n';
+    adapter->setSink(nullptr);
+    return true;
+  };
+
+  venue.queryFn = [&]() {
+    SnapshotPrinter snapshotPrinter;
+    CtpQueryService queries(session);
+    queries.setSink(&snapshotPrinter);
+    const bool account = queries.queryAccount();
+    const bool positions = queries.queryPositions();
+    std::cout << "RESULT lifecycle=cancel-reject+fill accountSnapshot=" << account
+              << " positionSnapshot=" << positions << '\n';
+    return account && positions;
+  };
+
+  return runSmokeLifecycle(venue) ? 0 : 1;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -581,6 +771,7 @@ int main(int argc, char** argv) {
   std::string mode;
   std::string instrumentList;
   std::string priceText;
+  std::string fillPriceText;
   std::string qtyText;
   std::string sideText;
   std::string offsetText;
@@ -596,6 +787,8 @@ int main(int argc, char** argv) {
       instrumentList = argv[++index];
     } else if (argument == "--price" && index + 1 < argc) {
       priceText = argv[++index];
+    } else if (argument == "--fill-price" && index + 1 < argc) {
+      fillPriceText = argv[++index];
     } else if (argument == "--qty" && index + 1 < argc) {
       qtyText = argv[++index];
     } else if (argument == "--side" && index + 1 < argc) {
@@ -625,14 +818,19 @@ int main(int argc, char** argv) {
     return 2;
   }
   if (mode != "login-smoke" && mode != "md-smoke" && mode != "query-smoke" &&
-      mode != "order-smoke" && mode != "cancel-reject-smoke") {
+      mode != "order-smoke" && mode != "cancel-reject-smoke" &&
+      mode != "lifecycle-smoke") {
     std::cerr << "unsupported smoke mode: " << mode << '\n';
     usage();
     return 2;
   }
   const bool sendOrders = live && !dryRun;
-  if (mode == "cancel-reject-smoke" && !sendOrders) {
-    std::cerr << "--live is required for --mode cancel-reject-smoke\n";
+  if ((mode == "cancel-reject-smoke" || mode == "lifecycle-smoke") && !sendOrders) {
+    std::cerr << "--live is required for --mode " << mode << '\n';
+    return 2;
+  }
+  if (mode == "lifecycle-smoke" && fillPriceText.empty()) {
+    std::cerr << "--fill-price is required for --mode lifecycle-smoke\n";
     return 2;
   }
   if ((mode != "order-smoke" || sendOrders) && configPath.empty()) {
@@ -647,6 +845,10 @@ int main(int argc, char** argv) {
     }
     if (mode == "cancel-reject-smoke") {
       return cancelRejectSmoke(configPath, splitList(instrumentList), priceText, qtyText);
+    }
+    if (mode == "lifecycle-smoke") {
+      return lifecycleSmoke(configPath, splitList(instrumentList), priceText, fillPriceText,
+                            qtyText);
     }
 
     const CtpConfig config = CtpConfig::load(configPath);

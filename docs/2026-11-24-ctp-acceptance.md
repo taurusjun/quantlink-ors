@@ -143,8 +143,35 @@ case is covered by `CtpAdapterTest::checkOldSessionReportsDropped`; a real old
 front callback is not naturally reproducible on SimNow, so it remains a
 fault-injection test rather than a live venue replay.
 
-Current 190 ctest: 15/15 PASS (`ctp_cancel_reject_mode_wired` added;
+Current 190 ctest: 16/16 PASS (`ctp_smoke_lifecycle` added;
 `ctp_reconciler` removed with the ORS order-state cleanup).
+
+## 5.3 Single-login live lifecycle
+
+The first live smoke implementation logged in once per mode, so rapid
+cancel/fill/query runs hit SimNow session pressure and stalled in
+`QUERYING_INSTRUMENTS`. The smoke now has one `lifecycle-smoke` mode:
+
+```text
+one login -> cancel-reject case -> fill case -> account/position query
+```
+
+Live result on the production SimNow config (2026-11-26):
+
+```text
+READY instruments=16860
+CANCEL-CASE rejected=true cleanup=CANCELED
+FILL-CASE status=FILLED trades=1
+trade id=267812 price=767.72 qty=1
+accountSnapshot=1 positionSnapshot=1
+```
+
+TDD test (`ctp_smoke_lifecycle`) was written first and observed failing:
+
+```text
+RED:   5 assertions failed (login count/order/stop-after-failure)
+GREEN: login exactly once -> cancel -> fill -> query
+```
 
 ## 6. L1 runtime wiring (CTP ORS -> FastTrade AccessClient)
 
