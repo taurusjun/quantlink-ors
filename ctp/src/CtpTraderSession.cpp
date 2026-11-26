@@ -11,8 +11,11 @@
 #include <iostream>
 #include <mutex>
 #include <stdexcept>
+#include <string_view>
 #include <system_error>
 #include <utility>
+
+#include "ors/base/Log.h"
 
 namespace ors::ctp {
 namespace {
@@ -65,11 +68,19 @@ const char* toString(SessionState state) {
 }
 
 struct CtpTraderSession::Impl {
-  explicit Impl(CtpConfig config) : config_(std::move(config)) {}
+  explicit Impl(CtpConfig config, std::shared_ptr<spdlog::logger> logger)
+      : config_(std::move(config)), logger_(std::move(logger)) {}
   ~Impl() { stop(); }
 
   Impl(const Impl&) = delete;
   Impl& operator=(const Impl&) = delete;
+
+  void emit(spdlog::level::level_enum level, std::string_view event,
+            std::initializer_list<base::LogField> fields) const {
+    if (logger_) {
+      base::logEvent(*logger_, level, event, fields);
+    }
+  }
 
   bool start(std::chrono::milliseconds timeout) {
     {
@@ -124,7 +135,14 @@ struct CtpTraderSession::Impl {
       }
     }
     if (!ready) {
-      std::cerr << "[ctp] login failed: " << failure << '\n';
+      if (logger_) {
+        emit(spdlog::level::err, "session.handshake",
+             {base::LogField("session", "trader"),
+              base::LogField("step", "login"),
+              base::LogField("reason", failure)});
+      } else {
+        std::cerr << "[ctp] login failed: " << failure << '\n';
+      }
       stop();
     }
     return ready;
@@ -279,7 +297,13 @@ struct CtpTraderSession::Impl {
                                              : SessionState::Failed;
       lastError_ = message;
     }
-    std::cerr << "[ctp] " << message << '\n';
+    if (logger_) {
+      emit(spdlog::level::warn, "session.disconnected",
+           {base::LogField("session", "trader"),
+            base::LogField("reason", reason)});
+    } else {
+      std::cerr << "[ctp] " << message << '\n';
+    }
     cv_.notify_all();
   }
 
@@ -383,7 +407,13 @@ struct CtpTraderSession::Impl {
       ready = state_ == SessionState::Ready;
     }
     if (ready) {
-      std::cerr << "[ctp] " << message << '\n';
+      if (logger_) {
+        emit(spdlog::level::warn, "session.error",
+             {base::LogField("session", "trader"),
+              base::LogField("reason", message)});
+      } else {
+        std::cerr << "[ctp] " << message << '\n';
+      }
       return;
     }
     fail(message);
@@ -398,7 +428,13 @@ struct CtpTraderSession::Impl {
       state_ = SessionState::Failed;
       lastError_ = message;
     }
-    std::cerr << "[ctp] failed: " << message << '\n';
+    if (logger_) {
+      emit(spdlog::level::err, "session.failed",
+           {base::LogField("session", "trader"),
+            base::LogField("reason", message)});
+    } else {
+      std::cerr << "[ctp] failed: " << message << '\n';
+    }
     cv_.notify_all();
   }
 
@@ -416,8 +452,18 @@ struct CtpTraderSession::Impl {
   }
 
   void logState() const {
-    std::lock_guard<std::mutex> lock(mutex_);
-    std::cerr << "[ctp] state=" << toString(state_) << '\n';
+    std::string state;
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      state = toString(state_);
+    }
+    if (logger_) {
+      emit(spdlog::level::info, "session.state",
+           {base::LogField("session", "trader"),
+            base::LogField("state", state)});
+    } else {
+      std::cerr << "[ctp] state=" << state << '\n';
+    }
   }
 
   struct TraderSpi final : CThostFtdcTraderSpi {
@@ -533,6 +579,7 @@ struct CtpTraderSession::Impl {
   };
 
   CtpConfig config_;
+  std::shared_ptr<spdlog::logger> logger_;
   mutable std::mutex mutex_;
   std::condition_variable cv_;
   SessionState state_{SessionState::Disconnected};
@@ -549,8 +596,9 @@ struct CtpTraderSession::Impl {
   std::unique_ptr<TraderSpi> spi_;
 };
 
-CtpTraderSession::CtpTraderSession(CtpConfig config)
-    : impl_(std::make_unique<Impl>(std::move(config))) {}
+CtpTraderSession::CtpTraderSession(CtpConfig config,
+                                   std::shared_ptr<spdlog::logger> logger)
+    : impl_(std::make_unique<Impl>(std::move(config), std::move(logger))) {}
 
 CtpTraderSession::~CtpTraderSession() = default;
 

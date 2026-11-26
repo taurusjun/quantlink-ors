@@ -12,8 +12,11 @@
 #include <filesystem>
 #include <iostream>
 #include <mutex>
+#include <string_view>
 #include <system_error>
 #include <utility>
+
+#include "ors/base/Log.h"
 
 namespace ors::ctp {
 namespace {
@@ -89,11 +92,19 @@ MarketData mapDepthMarketData(const DepthTick& tick) {
 }
 
 struct CtpMdSession::Impl {
-  explicit Impl(CtpConfig config) : config_(std::move(config)) {}
+  explicit Impl(CtpConfig config, std::shared_ptr<spdlog::logger> logger)
+      : config_(std::move(config)), logger_(std::move(logger)) {}
   ~Impl() { stop(); }
 
   Impl(const Impl&) = delete;
   Impl& operator=(const Impl&) = delete;
+
+  void emit(spdlog::level::level_enum level, std::string_view event,
+            std::initializer_list<base::LogField> fields) const {
+    if (logger_) {
+      base::logEvent(*logger_, level, event, fields);
+    }
+  }
 
   bool start(std::chrono::milliseconds timeout) {
     {
@@ -146,7 +157,14 @@ struct CtpMdSession::Impl {
       }
     }
     if (!ready) {
-      std::cerr << "[ctp] md login failed: " << failure << '\n';
+      if (logger_) {
+        emit(spdlog::level::err, "session.handshake",
+             {base::LogField("session", "md"),
+              base::LogField("step", "login"),
+              base::LogField("reason", failure)});
+      } else {
+        std::cerr << "[ctp] md login failed: " << failure << '\n';
+      }
       stop();
     }
     return ready;
@@ -228,9 +246,16 @@ struct CtpMdSession::Impl {
     if (result != 0) {
       const std::string message = "SubscribeMarketData rejected rc=" +
                                   std::to_string(result);
-      std::lock_guard<std::mutex> lock(mutex_);
-      lastError_ = message;
-      std::cerr << "[ctp] " << message << '\n';
+      {
+        std::lock_guard<std::mutex> lock(mutex_);
+        lastError_ = message;
+      }
+      if (logger_) {
+        emit(spdlog::level::err, "md.subscribe_failed",
+             {base::LogField("reason", message)});
+      } else {
+        std::cerr << "[ctp] " << message << '\n';
+      }
       return false;
     }
     return true;
@@ -272,7 +297,13 @@ struct CtpMdSession::Impl {
                                              : SessionState::Failed;
       lastError_ = message;
     }
-    std::cerr << "[ctp] " << message << '\n';
+    if (logger_) {
+      emit(spdlog::level::warn, "session.disconnected",
+           {base::LogField("session", "md"),
+            base::LogField("reason", reason)});
+    } else {
+      std::cerr << "[ctp] " << message << '\n';
+    }
     cv_.notify_all();
   }
 
@@ -310,9 +341,16 @@ struct CtpMdSession::Impl {
         "subscribe failed instrument=" +
         std::string(instrument != nullptr ? instrument->InstrumentID : "?") + " " +
         errorText(info);
-    std::lock_guard<std::mutex> lock(mutex_);
-    lastError_ = message;
-    std::cerr << "[ctp] " << message << '\n';
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      lastError_ = message;
+    }
+    if (logger_) {
+      emit(spdlog::level::warn, "md.subscribe_failed",
+           {base::LogField("reason", message)});
+    } else {
+      std::cerr << "[ctp] " << message << '\n';
+    }
   }
 
   void onRtnDepthMarketData(const CThostFtdcDepthMarketDataField& row) {
@@ -334,7 +372,13 @@ struct CtpMdSession::Impl {
       ready = state_ == SessionState::Ready;
     }
     if (ready) {
-      std::cerr << "[ctp] " << message << '\n';
+      if (logger_) {
+        emit(spdlog::level::warn, "session.error",
+             {base::LogField("session", "md"),
+              base::LogField("reason", message)});
+      } else {
+        std::cerr << "[ctp] " << message << '\n';
+      }
       return;
     }
     fail(message);
@@ -349,7 +393,13 @@ struct CtpMdSession::Impl {
       state_ = SessionState::Failed;
       lastError_ = message;
     }
-    std::cerr << "[ctp] failed: " << message << '\n';
+    if (logger_) {
+      emit(spdlog::level::err, "session.failed",
+           {base::LogField("session", "md"),
+            base::LogField("reason", message)});
+    } else {
+      std::cerr << "[ctp] failed: " << message << '\n';
+    }
     cv_.notify_all();
   }
 
@@ -359,8 +409,18 @@ struct CtpMdSession::Impl {
   }
 
   void logState() const {
-    std::lock_guard<std::mutex> lock(mutex_);
-    std::cerr << "[ctp] md state=" << toString(state_) << '\n';
+    std::string state;
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      state = toString(state_);
+    }
+    if (logger_) {
+      emit(spdlog::level::info, "session.state",
+           {base::LogField("session", "md"),
+            base::LogField("state", state)});
+    } else {
+      std::cerr << "[ctp] md state=" << state << '\n';
+    }
   }
 
   struct MdSpi final : CThostFtdcMdSpi {
@@ -394,6 +454,7 @@ struct CtpMdSession::Impl {
   };
 
   CtpConfig config_;
+  std::shared_ptr<spdlog::logger> logger_;
   mutable std::mutex mutex_;
   std::condition_variable cv_;
   SessionState state_{SessionState::Disconnected};
@@ -407,8 +468,8 @@ struct CtpMdSession::Impl {
   std::unique_ptr<MdSpi> spi_;
 };
 
-CtpMdSession::CtpMdSession(CtpConfig config)
-    : impl_(std::make_unique<Impl>(std::move(config))) {}
+CtpMdSession::CtpMdSession(CtpConfig config, std::shared_ptr<spdlog::logger> logger)
+    : impl_(std::make_unique<Impl>(std::move(config), std::move(logger))) {}
 
 CtpMdSession::~CtpMdSession() = default;
 

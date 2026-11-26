@@ -51,6 +51,7 @@ STREAM_BASE = 9000
 SOURCE_PUBLICATION_EPOCH = 7
 SOURCE_SESSION_ID = 42
 QUERY_INTERVAL_SECONDS = 2
+LOG_FILE = /tmp/ors-test.jsonl
 )";
 
 }  // namespace
@@ -75,6 +76,7 @@ int main() {
   check(config.sourcePublicationEpoch == 7, "SOURCE_PUBLICATION_EPOCH is read");
   check(config.sourceSessionId == 42, "SOURCE_SESSION_ID is read");
   check(config.queryIntervalSeconds == 2, "QUERY_INTERVAL_SECONDS is read");
+  check(config.logFile == "/tmp/ors-test.jsonl", "LOG_FILE is read");
   check(config.orderStream == 9002, "order stream is base+2");
   check(config.cancelStream == 9003, "cancel stream is base+3");
   check(config.streams.marketData == 9001, "market-data stream is base+1");
@@ -161,6 +163,7 @@ int main() {
   const ContractRuntimeConfig defaults = ContractRuntimeConfig::load(optional);
   check(defaults.sourceSessionId == 0, "SOURCE_SESSION_ID defaults to 0");
   check(defaults.queryIntervalSeconds == 1, "QUERY_INTERVAL_SECONDS defaults to 1");
+  check(defaults.logFile == "./log/ors.jsonl", "LOG_FILE defaults to ./log/ors.jsonl");
 
   check(throwsContaining([&] { ContractRuntimeConfig::load(dir / "absent.cfg"); },
                          "cannot open"),

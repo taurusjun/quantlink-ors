@@ -21,6 +21,7 @@ struct ContractRuntimeConfig {
   int orderStream{0};
   int cancelStream{0};
   int queryIntervalSeconds{1};
+  std::string logFile{"./log/ors.jsonl"};
 
   /// Reads the runtime section from the same key=value file as CtpConfig.
   /// Required keys: AERON_DIR, VENUE_ID, ORS_ID, ENVIRONMENT, EXCHANGE,

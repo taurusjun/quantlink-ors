@@ -4,9 +4,15 @@
 #include <chrono>
 #include <cmath>
 #include <ctime>
+#include <filesystem>
 #include <iomanip>
+#include <mutex>
 #include <sstream>
+#include <stdexcept>
 #include <string>
+
+#include <spdlog/async.h>
+#include <spdlog/sinks/rotating_file_sink.h>
 
 #include "ors/base/Metrics.h"
 
@@ -165,6 +171,32 @@ void logMetrics(spdlog::logger& logger, const Metrics& metrics) {
             LogField("md_stale", metrics.mdStale.load(kRelaxed)),
             LogField("reconnects", metrics.reconnects.load(kRelaxed)),
             LogField("query_failures", metrics.queryFailures.load(kRelaxed))});
+}
+
+std::shared_ptr<spdlog::logger> createLogger(const std::string& name,
+                                             const std::string& filePath,
+                                             spdlog::level::level_enum level) {
+  const std::filesystem::path path(filePath);
+  if (path.has_parent_path()) {
+    std::error_code error;
+    std::filesystem::create_directories(path.parent_path(), error);
+    if (error) {
+      throw std::runtime_error("cannot create log directory " +
+                               path.parent_path().string() + ": " + error.message());
+    }
+  }
+
+  static std::once_flag initOnce;
+  std::call_once(initOnce, [] { spdlog::init_thread_pool(8192, 1); });
+
+  auto sink = std::make_shared<spdlog::sinks::rotating_file_sink_mt>(
+      filePath, 100ULL * 1024 * 1024, 5);
+  auto logger = std::make_shared<spdlog::async_logger>(
+      name, sink, spdlog::thread_pool(), spdlog::async_overflow_policy::overrun_oldest);
+  logger->set_pattern("%v");
+  logger->set_level(level);
+  logger->flush_on(spdlog::level::err);
+  return logger;
 }
 
 }  // namespace ors::base

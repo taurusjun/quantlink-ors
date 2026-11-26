@@ -13,6 +13,8 @@
 #include "ors/ctp/CtpAdapter.h"
 #include "ors/ctp/CtpQueryService.h"
 #include "ors/ctp/CtpSession.h"
+#include "ors/base/Log.h"
+#include "ors/base/Metrics.h"
 
 namespace ors::ctp {
 namespace {
@@ -33,6 +35,8 @@ std::uint64_t nowNanos() {
 struct ContractRuntime::Impl final : ExecutionSink, SnapshotSink {
   CtpConfig config;
   ContractRuntimeConfig runtimeConfig;
+  std::shared_ptr<spdlog::logger> logger;
+  base::Metrics metrics;
   CtpTraderSession trader;
   CtpAdapter adapter;
   AeronFramePublisher publisher;
@@ -43,6 +47,7 @@ struct ContractRuntime::Impl final : ExecutionSink, SnapshotSink {
   std::size_t lastMdCount{0};
   bool mdPublished{false};
   std::chrono::steady_clock::time_point lastMdAt{};
+  std::chrono::steady_clock::time_point lastMetricsAt{};
   std::mutex sinkMutex;
   std::atomic_bool stopping{false};
   std::atomic<std::uint64_t> currentEpoch{1};
@@ -51,7 +56,8 @@ struct ContractRuntime::Impl final : ExecutionSink, SnapshotSink {
   Impl(CtpConfig configValue, ContractRuntimeConfig runtimeValue)
       : config(std::move(configValue)),
         runtimeConfig(std::move(runtimeValue)),
-        trader(config),
+        logger(base::createLogger("ors", runtimeConfig.logFile)),
+        trader(config, logger),
         adapter(trader),
         publisher(runtimeConfig.aeronDir, "aeron:ipc",
                   {runtimeConfig.streams.execution, runtimeConfig.streams.position,
@@ -65,13 +71,19 @@ struct ContractRuntime::Impl final : ExecutionSink, SnapshotSink {
             .sourceSessionId = runtimeConfig.sourceSessionId,
             .sourcePublicationEpoch = runtimeConfig.sourcePublicationEpoch,
             .streams = runtimeConfig.streams}),
-        md(config),
+        md(config, logger),
         queries(trader),
         commands(runtimeConfig.aeronDir, "aeron:ipc",
                  runtimeConfig.orderStream, runtimeConfig.cancelStream) {
     currentEpoch.store(runtimeConfig.sourcePublicationEpoch);
+    lastMetricsAt = std::chrono::steady_clock::now();
     adapter.setSink(this);
     queries.setSink(this);
+  }
+
+  void emit(spdlog::level::level_enum level, std::string_view event,
+            std::initializer_list<base::LogField> fields) {
+    base::logEvent(*logger, level, event, fields);
   }
 
   void onOrderUpdate(const OrderUpdate& update) override {
@@ -129,12 +141,15 @@ struct ContractRuntime::Impl final : ExecutionSink, SnapshotSink {
   }
 
   void beginReconnect() {
+    const std::uint64_t oldEpoch = currentEpoch.load(std::memory_order_relaxed);
     const std::uint64_t epoch = currentEpoch.fetch_add(1) + 1;
     {
       std::lock_guard<std::mutex> lock(sinkMutex);
       sink.setSourcePublicationEpoch(epoch);
     }
-    std::cerr << "runtime reconnecting epoch=" << epoch << '\n';
+    metrics.reconnects.fetch_add(1, std::memory_order_relaxed);
+    emit(spdlog::level::info, "reconnect.epoch",
+         {base::LogField("old_epoch", oldEpoch), base::LogField("new_epoch", epoch)});
     publishSession();
   }
 
@@ -142,29 +157,39 @@ struct ContractRuntime::Impl final : ExecutionSink, SnapshotSink {
     std::signal(SIGINT, requestStop);
     std::signal(SIGTERM, requestStop);
     if (!trader.start(std::chrono::seconds(300))) {
-      std::cerr << "runtime trader start failed: " << trader.lastError() << '\n';
+      emit(spdlog::level::err, "ors.start_failed",
+           {base::LogField("reason", trader.lastError())});
+      logger->flush();
       return 1;
     }
     if (config.mdFront.empty()) {
-      std::cerr << "runtime requires MD front\n";
+      emit(spdlog::level::err, "ors.start_failed",
+           {base::LogField("reason", "MD front is empty")});
+      logger->flush();
       return 1;
     }
     if (!md.start(std::chrono::seconds(120))) {
-      std::cerr << "runtime md start failed: " << md.lastError() << '\n';
+      emit(spdlog::level::err, "ors.start_failed",
+           {base::LogField("reason", md.lastError())});
+      logger->flush();
       return 1;
     }
     if (!runtimeConfig.instruments.empty() && !md.subscribe(runtimeConfig.instruments)) {
-      std::cerr << "runtime md subscribe failed: " << md.lastError() << '\n';
+      emit(spdlog::level::err, "ors.start_failed",
+           {base::LogField("reason", md.lastError())});
+      logger->flush();
       return 1;
     }
 
-    std::cerr << "runtime READY venue=" << runtimeConfig.venueId
-              << " account=" << config.investorId
-              << " ors=" << runtimeConfig.orsId
-              << " sourceSession=" << runtimeConfig.sourceSessionId
-              << " epoch=" << runtimeConfig.sourcePublicationEpoch
-              << " streams=" << runtimeConfig.streams.execution
-              << "," << runtimeConfig.streams.marketData << '\n';
+    emit(spdlog::level::info, "ors.start",
+         {base::LogField("venue_id", runtimeConfig.venueId),
+          base::LogField("account_id", config.investorId),
+          base::LogField("ors_id", runtimeConfig.orsId),
+          base::LogField("environment", runtimeConfig.environment),
+          base::LogField("source_session_id", runtimeConfig.sourceSessionId),
+          base::LogField("source_publication_epoch", runtimeConfig.sourcePublicationEpoch),
+          base::LogField("stream_execution", runtimeConfig.streams.execution),
+          base::LogField("stream_market_data", runtimeConfig.streams.marketData)});
     publishSession();
     lastTraderState = trader.state();
     std::thread queryThread([this] {
@@ -185,8 +210,8 @@ struct ContractRuntime::Impl final : ExecutionSink, SnapshotSink {
             lastTraderState == SessionState::Ready) {
           beginReconnect();
         } else if (traderState == SessionState::Ready) {
-          std::cerr << "runtime reconnected epoch="
-                    << currentEpoch.load(std::memory_order_relaxed) << '\n';
+          emit(spdlog::level::info, "reconnect.ready",
+               {base::LogField("epoch", currentEpoch.load(std::memory_order_relaxed))});
           publishSession();
         }
         lastTraderState = traderState;
@@ -194,18 +219,25 @@ struct ContractRuntime::Impl final : ExecutionSink, SnapshotSink {
 
       commands.poll(10,
           [this](const OrderRequest& request) {
+            metrics.ordersReceived.fetch_add(1, std::memory_order_relaxed);
             if (!adapter.onOrderRequest(request)) {
-              std::cerr << "runtime order rejected: " << adapter.lastError() << '\n';
+              emit(spdlog::level::warn, "order.rejected",
+                   {base::LogField("order_ref", request.orderRef),
+                    base::LogField("reason", adapter.lastError())});
             }
           },
           [this](const CancelRequest& request) {
+            metrics.ordersReceived.fetch_add(1, std::memory_order_relaxed);
             if (!adapter.onCancelRequest(request)) {
-              std::cerr << "runtime cancel rejected: " << adapter.lastError() << '\n';
+              emit(spdlog::level::warn, "cancel.rejected",
+                   {base::LogField("order_ref", request.orderRef),
+                    base::LogField("reason", adapter.lastError())});
             }
           });
 
       const std::size_t count = md.marketDataCount();
       if (count != lastMdCount) {
+        metrics.mdTicks.fetch_add(count - lastMdCount, std::memory_order_relaxed);
         lastMdCount = count;
         mdPublished = false;
       }
@@ -224,10 +256,17 @@ struct ContractRuntime::Impl final : ExecutionSink, SnapshotSink {
         lastSessionAt = now;
         publishSession();
       }
+      if (now - lastMetricsAt >= std::chrono::seconds(60)) {
+        lastMetricsAt = now;
+        base::logMetrics(*logger, metrics);
+      }
       std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
     stopping.store(true, std::memory_order_relaxed);
     if (queryThread.joinable()) queryThread.join();
+    emit(spdlog::level::info, "ors.shutdown", {});
+    base::logMetrics(*logger, metrics);
+    logger->flush();
     return 0;
   }
 };

@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <initializer_list>
+#include <memory>
 #include <string>
 #include <string_view>
 #include <variant>
@@ -37,5 +38,11 @@ void logEvent(spdlog::logger& logger, spdlog::level::level_enum level,
               std::string_view event, std::initializer_list<LogField> fields);
 
 void logMetrics(spdlog::logger& logger, const Metrics& metrics);
+
+/// Creates the production JSONL logger: async queue 8192, overrun_oldest,
+/// rotating 100MB x 5. Throws on an unwritable path.
+std::shared_ptr<spdlog::logger> createLogger(
+    const std::string& name, const std::string& filePath,
+    spdlog::level::level_enum level = spdlog::level::info);
 
 }  // namespace ors::base

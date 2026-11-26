@@ -78,6 +78,9 @@ ContractRuntimeConfig ContractRuntimeConfig::load(const std::string& path) {
   if (file.contains("QUERY_INTERVAL_SECONDS")) {
     config.queryIntervalSeconds = requirePositiveInt(file, "QUERY_INTERVAL_SECONDS");
   }
+  if (file.contains("LOG_FILE")) {
+    config.logFile = file.require("LOG_FILE");
+  }
   return config;
 }
 

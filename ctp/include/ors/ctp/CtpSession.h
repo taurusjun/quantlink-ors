@@ -13,6 +13,10 @@
 class CThostFtdcTraderApi;
 class CThostFtdcTraderSpi;
 
+namespace spdlog {
+class logger;
+}
+
 namespace ors::ctp {
 
 enum class SessionState {
@@ -92,7 +96,8 @@ MarketData mapDepthMarketData(const DepthTick& tick);
  */
 class CtpTraderSession {
  public:
-  explicit CtpTraderSession(CtpConfig config);
+  explicit CtpTraderSession(CtpConfig config,
+                            std::shared_ptr<spdlog::logger> logger = nullptr);
   ~CtpTraderSession();
 
   CtpTraderSession(const CtpTraderSession&) = delete;
@@ -156,7 +161,8 @@ class CtpTraderSession {
  */
 class CtpMdSession {
  public:
-  explicit CtpMdSession(CtpConfig config);
+  explicit CtpMdSession(CtpConfig config,
+                        std::shared_ptr<spdlog::logger> logger = nullptr);
   ~CtpMdSession();
 
   CtpMdSession(const CtpMdSession&) = delete;

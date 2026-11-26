@@ -1,6 +1,10 @@
+#include <chrono>
+#include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <sstream>
 #include <string>
+#include <thread>
 
 #include <spdlog/sinks/ostream_sink.h>
 #include <spdlog/spdlog.h>
@@ -54,6 +58,31 @@ int main() {
     std::cerr << "FAIL: JSONL object\n";
     return 1;
   }
-  std::cout << "base_log: JSONL, escaping and redaction\n";
+
+  const auto path = std::filesystem::temp_directory_path() / "ors_base_log_test.jsonl";
+  std::error_code ignored;
+  std::filesystem::remove(path, ignored);
+  auto fileLogger = ors::base::createLogger("file-test", path.string());
+  ors::base::logEvent(*fileLogger, spdlog::level::info, "file.test",
+                      {ors::base::LogField("n", 7)});
+  fileLogger->flush();
+  std::string fileText;
+  for (int attempt = 0; attempt < 100; ++attempt) {
+    std::ifstream input(path, std::ios::binary);
+    fileText.assign(std::istreambuf_iterator<char>(input),
+                    std::istreambuf_iterator<char>());
+    if (fileText.find("\"event\":\"file.test\"") != std::string::npos) {
+      break;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  fileLogger.reset();
+  std::filesystem::remove(path, ignored);
+  if (fileText.find("\"event\":\"file.test\"") == std::string::npos ||
+      fileText.find("\"n\":7") == std::string::npos) {
+    std::cerr << "FAIL: async file logger\n";
+    return 1;
+  }
+  std::cout << "base_log: JSONL, escaping, redaction and async file\n";
   return 0;
 }
