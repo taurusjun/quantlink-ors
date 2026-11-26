@@ -50,6 +50,8 @@ struct ContractRuntime::Impl final : ExecutionSink, SnapshotSink {
   std::chrono::steady_clock::time_point lastMetricsAt{};
   std::mutex sinkMutex;
   std::atomic_bool stopping{false};
+  std::atomic_bool transportHealthy{true};
+  std::atomic<std::int64_t> transportRetryAtMillis{0};
   std::atomic<std::uint64_t> currentEpoch{1};
   SessionState lastTraderState{SessionState::Disconnected};
 
@@ -86,20 +88,43 @@ struct ContractRuntime::Impl final : ExecutionSink, SnapshotSink {
     base::logEvent(*logger, level, event, fields);
   }
 
+  static std::int64_t steadyMillis() {
+    return std::chrono::duration_cast<std::chrono::milliseconds>(
+               std::chrono::steady_clock::now().time_since_epoch()).count();
+  }
+
+  void markTransportFailure(std::string_view frameType, std::uint64_t orderRef) {
+    transportHealthy.store(false, std::memory_order_relaxed);
+    transportRetryAtMillis.store(steadyMillis() + 1000, std::memory_order_relaxed);
+    metrics.aeronFailed.fetch_add(1, std::memory_order_relaxed);
+    emit(spdlog::level::err, "publish.fail",
+         {base::LogField("frame_type", std::string(frameType)),
+          base::LogField("order_ref", orderRef),
+          base::LogField("stream_id", runtimeConfig.streams.execution)});
+  }
+
   void onOrderUpdate(const OrderUpdate& update) override {
     OrderUpdate copy = update;
     copy.sourceSessionId = runtimeConfig.sourceSessionId;
     copy.sourcePublicationEpoch = currentEpoch.load(std::memory_order_relaxed);
-    std::lock_guard<std::mutex> lock(sinkMutex);
-    sink.publishOrderUpdate(copy);
+    bool published = false;
+    {
+      std::lock_guard<std::mutex> lock(sinkMutex);
+      published = sink.publishOrderUpdate(copy);
+    }
+    if (!published) markTransportFailure("order_update", update.orderRef);
   }
 
   void onTrade(const Trade& trade) override {
     Trade copy = trade;
     copy.sourceSessionId = runtimeConfig.sourceSessionId;
     copy.sourcePublicationEpoch = currentEpoch.load(std::memory_order_relaxed);
-    std::lock_guard<std::mutex> lock(sinkMutex);
-    sink.publishTrade(copy);
+    bool published = false;
+    {
+      std::lock_guard<std::mutex> lock(sinkMutex);
+      published = sink.publishTrade(copy);
+    }
+    if (!published) markTransportFailure("trade", trade.orderRef);
   }
 
   void onSnapshot(const AccountSnapshot& snapshot) override {
@@ -217,9 +242,22 @@ struct ContractRuntime::Impl final : ExecutionSink, SnapshotSink {
         lastTraderState = traderState;
       }
 
+      if (!transportHealthy.load(std::memory_order_relaxed) &&
+          steadyMillis() >= transportRetryAtMillis.load(std::memory_order_relaxed) &&
+          publisher.isConnected(runtimeConfig.streams.execution)) {
+        transportHealthy.store(true, std::memory_order_relaxed);
+        emit(spdlog::level::info, "transport.recovered", {});
+      }
+
       commands.poll(10,
           [this](const OrderRequest& request) {
             metrics.ordersReceived.fetch_add(1, std::memory_order_relaxed);
+            if (!transportHealthy.load(std::memory_order_relaxed)) {
+              emit(spdlog::level::warn, "order.rejected",
+                   {base::LogField("order_ref", request.orderRef),
+                    base::LogField("reason", "transport_unhealthy")});
+              return;
+            }
             if (!adapter.onOrderRequest(request)) {
               emit(spdlog::level::warn, "order.rejected",
                    {base::LogField("order_ref", request.orderRef),
@@ -228,6 +266,12 @@ struct ContractRuntime::Impl final : ExecutionSink, SnapshotSink {
           },
           [this](const CancelRequest& request) {
             metrics.ordersReceived.fetch_add(1, std::memory_order_relaxed);
+            if (!transportHealthy.load(std::memory_order_relaxed)) {
+              emit(spdlog::level::warn, "cancel.rejected",
+                   {base::LogField("order_ref", request.orderRef),
+                    base::LogField("reason", "transport_unhealthy")});
+              return;
+            }
             if (!adapter.onCancelRequest(request)) {
               emit(spdlog::level::warn, "cancel.rejected",
                    {base::LogField("order_ref", request.orderRef),

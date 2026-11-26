@@ -5,8 +5,19 @@
 #include <thread>
 
 #include "concurrent/AtomicBuffer.h"
+#include "ors/ctp/OfferRetry.h"
 
 namespace ors::ctp {
+namespace {
+
+OfferResult mapOfferResult(std::int64_t result) {
+  if (result > 0) return OfferResult::Published;
+  if (result == aeron::BACK_PRESSURED) return OfferResult::BackPressured;
+  if (result == aeron::NOT_CONNECTED) return OfferResult::NotConnected;
+  return OfferResult::Closed;
+}
+
+}  // namespace
 
 AeronFramePublisher::AeronFramePublisher(
     std::string aeronDir, std::string channel, const std::vector<int>& streamIds) {
@@ -37,7 +48,13 @@ bool AeronFramePublisher::publish(int streamId, const char* data, std::size_t le
   if (publication == publications_.end()) return false;
   aeron::AtomicBuffer buffer(
       reinterpret_cast<std::uint8_t*>(const_cast<char*>(data)), length);
-  return publication->second->offer(buffer, 0, static_cast<aeron::index_t>(length)) > 0;
+  const OfferResult result = offerWithRetry(
+      [&] {
+        return mapOfferResult(publication->second->offer(
+            buffer, 0, static_cast<aeron::index_t>(length)));
+      },
+      std::chrono::milliseconds(100));
+  return result == OfferResult::Published;
 }
 
 bool AeronFramePublisher::isConnected(int streamId) const {
