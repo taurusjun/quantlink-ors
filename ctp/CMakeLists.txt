@@ -42,6 +42,7 @@ add_library(ors_core STATIC
     core/MDHandler.cpp
     core/OrsConfig.cpp
     core/PositionTable.cpp
+    log/Log.cpp
     transport/InMemoryOrsTransport.cpp
     vendor/hftbase/tinyxml2.cpp)
 target_include_directories(ors_core PUBLIC ${ORS_INCLUDE_DIRS})
@@ -64,4 +65,15 @@ target_compile_features(ctp_position_table_test PRIVATE cxx_std_20)
 if(CTP_FRAMEWORK_DIR)
   set_target_properties(ctp_position_table_test PROPERTIES BUILD_RPATH "${CTP_FRAMEWORK_DIR}")
 endif()
+if(CTP_FRAMEWORK_DIR)
+  set_target_properties(ctp_position_table_test PROPERTIES BUILD_RPATH "${CTP_FRAMEWORK_DIR}")
+endif()
 add_test(NAME ctp_position_table COMMAND ctp_position_table_test)
+
+add_executable(ctp_log_facade_test tests/LogFacadeTest.cpp)
+target_link_libraries(ctp_log_facade_test PRIVATE ors_core)
+target_compile_features(ctp_log_facade_test PRIVATE cxx_std_20)
+if(CTP_FRAMEWORK_DIR)
+  set_target_properties(ctp_log_facade_test PROPERTIES BUILD_RPATH "${CTP_FRAMEWORK_DIR}")
+endif()
+add_test(NAME ctp_log_facade COMMAND ctp_log_facade_test)
