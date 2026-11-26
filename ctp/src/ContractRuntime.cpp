@@ -107,6 +107,7 @@ struct ContractRuntime::Impl final : ExecutionSink, SnapshotSink {
   }
 
   void onOrderUpdate(const OrderUpdate& update) override {
+    metrics.ctpOrderCallbacks.fetch_add(1, std::memory_order_relaxed);
     OrderUpdate copy = update;
     copy.sourceSessionId = runtimeConfig.sourceSessionId;
     copy.sourcePublicationEpoch = currentEpoch.load(std::memory_order_relaxed);
@@ -115,10 +116,15 @@ struct ContractRuntime::Impl final : ExecutionSink, SnapshotSink {
       std::lock_guard<std::mutex> lock(sinkMutex);
       published = sink.publishOrderUpdate(copy);
     }
-    if (!published) markTransportFailure("order_update", update.orderRef);
+    if (published) {
+      metrics.aeronPublishOk.fetch_add(1, std::memory_order_relaxed);
+    } else {
+      markTransportFailure("order_update", update.orderRef);
+    }
   }
 
   void onTrade(const Trade& trade) override {
+    metrics.ctpTradeCallbacks.fetch_add(1, std::memory_order_relaxed);
     Trade copy = trade;
     copy.sourceSessionId = runtimeConfig.sourceSessionId;
     copy.sourcePublicationEpoch = currentEpoch.load(std::memory_order_relaxed);
@@ -127,7 +133,11 @@ struct ContractRuntime::Impl final : ExecutionSink, SnapshotSink {
       std::lock_guard<std::mutex> lock(sinkMutex);
       published = sink.publishTrade(copy);
     }
-    if (!published) markTransportFailure("trade", trade.orderRef);
+    if (published) {
+      metrics.aeronPublishOk.fetch_add(1, std::memory_order_relaxed);
+    } else {
+      markTransportFailure("trade", trade.orderRef);
+    }
   }
 
   void onSnapshot(const AccountSnapshot& snapshot) override {
@@ -294,6 +304,8 @@ struct ContractRuntime::Impl final : ExecutionSink, SnapshotSink {
               emit(spdlog::level::warn, "order.rejected",
                    {base::LogField("order_ref", request.orderRef),
                     base::LogField("reason", adapter.lastError())});
+            } else {
+              metrics.ordersSent.fetch_add(1, std::memory_order_relaxed);
             }
           },
           [this](const CancelRequest& request) {

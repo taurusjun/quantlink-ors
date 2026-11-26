@@ -22,6 +22,7 @@ int main() {
   ors::base::logEvent(logger, spdlog::level::info, "order.rtn",
       {ors::base::LogField("order_ref", 42),
        ors::base::LogField("reason", "a\"b\n"),
+       ors::base::LogField("long_reason", std::string(5000, 'x')),
        ors::base::LogField("password", "secret"),
        ors::base::LogField("price", 735.5),
        ors::base::LogField("ok", true)});
@@ -42,6 +43,11 @@ int main() {
   }
   if (text.find("secret") != std::string::npos) {
     std::cerr << "FAIL: credential leaked\n";
+    return 1;
+  }
+  if (text.find(std::string(4096, 'x')) == std::string::npos ||
+      text.find(std::string(4097, 'x')) != std::string::npos) {
+    std::cerr << "FAIL: long text truncation\n";
     return 1;
   }
   if (text.find("\"price\":735.5") == std::string::npos ||

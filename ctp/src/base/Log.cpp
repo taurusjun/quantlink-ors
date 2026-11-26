@@ -14,6 +14,7 @@
 #include <spdlog/async.h>
 #include <spdlog/sinks/rotating_file_sink.h>
 
+#include "ors/base/ContractText.h"
 #include "ors/base/Metrics.h"
 
 namespace ors::base {
@@ -121,7 +122,10 @@ std::string fieldValue(const LogField& field) {
     return "\"***\"";
   }
   if (std::holds_alternative<std::string>(field.value)) {
-    return "\"" + jsonEscape(std::get<std::string>(field.value)) + "\"";
+    constexpr std::size_t kMaxTextBytes = 4096;
+    return "\"" + jsonEscape(
+               fitContractField(std::get<std::string>(field.value), kMaxTextBytes)) +
+           "\"";
   }
   if (std::holds_alternative<std::int64_t>(field.value)) {
     return std::to_string(std::get<std::int64_t>(field.value));
