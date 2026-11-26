@@ -76,6 +76,11 @@ if(AERON_HOME AND AERON_RUNTIME_HOME)
   find_library(AERON_LIB NAMES aeron
       PATHS "${AERON_RUNTIME_HOME}/lib" REQUIRED)
   add_library(ors_aeron_client STATIC transport/AeronClient.cpp)
+  if(NOT APPLE)
+    add_executable(ors_ctp main.cpp)
+    target_link_libraries(ors_ctp PRIVATE ors_aeron_client ors_transport ors_core)
+    target_compile_features(ors_ctp PRIVATE cxx_std_20)
+  endif()
   target_include_directories(ors_aeron_client PUBLIC
       "${AERON_CPP_INCLUDE}" "${AERON_C_INCLUDE}")
   target_link_libraries(ors_aeron_client PUBLIC ors_transport "${AERON_LIB}")
