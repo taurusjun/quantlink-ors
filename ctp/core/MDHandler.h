@@ -7,7 +7,7 @@
 #include <list>
 
 #include "marketupdateNew.h"
-#include "mdshmwriter.h"
+#include "md/MarketDataSink.h"
 
 #include "MdSpi.h"
 
@@ -19,14 +19,14 @@ using namespace illuminati::md;
 class MDHandler
 {
 public:
-    MDHandler();
+    explicit MDHandler(::ors::MarketDataSink& sink);
     ~MDHandler();
     void ProcessMDUpdate(char *);
 
 private:
     uint64_t m_seqNum;
     uint64_t m_exchTS;
-    MarketDataShmWriter mdSHMWriter;
+    ::ors::MarketDataSink& sink_;
 };
 
 #endif

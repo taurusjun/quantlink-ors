@@ -10,7 +10,8 @@
 using namespace std;
 using namespace illuminati;
 
-extern int OB_CHECK, OB_SHMWRITE;
+int OB_CHECK = 0;
+int OB_SHMWRITE = 0;
 uint64_t getcurtime()
 {
     struct timespec tp;
@@ -18,12 +19,12 @@ uint64_t getcurtime()
     return (tp.tv_sec * 1000000000 + tp.tv_nsec);
 }
 
-MDHandler::MDHandler()
-{
+MDHandler::~MDHandler() = default;
+
+MDHandler::MDHandler(::ors::MarketDataSink& sink)
+    : m_seqNum(0), sink_(sink) {
     OB_CHECK = StatsRecorder::registerNewStat("OB_CHECK", 2000, 5000);
     OB_SHMWRITE = StatsRecorder::registerNewStat("OB_SHMWRITE", 2000, 5000);
-    m_seqNum = 0;
-    mdSHMWriter.init(MD_SHMKEY, MD_SHMSIZE);
 }
 
 void MDHandler::ProcessMDUpdate(char *msg)
@@ -62,7 +63,7 @@ void MDHandler::ProcessMDUpdate(char *msg)
     update->m_timestamp = getcurtime();
     startTime = update->m_timestamp;
     update->m_seqnum = ++m_seqNum;
-    mdSHMWriter.write(update);
+    sink_.send(*update);
     endTime = getcurtime();
     StatsRecorder::record(OB_SHMWRITE, (endTime - startTime));
 }
