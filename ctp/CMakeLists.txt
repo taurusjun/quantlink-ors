@@ -41,6 +41,7 @@ add_library(ors_core STATIC
     core/MdSpi.cpp
     core/MDHandler.cpp
     core/OrsConfig.cpp
+    core/PositionTable.cpp
     transport/InMemoryOrsTransport.cpp
     vendor/hftbase/tinyxml2.cpp)
 target_include_directories(ors_core PUBLIC ${ORS_INCLUDE_DIRS})
@@ -56,3 +57,11 @@ if(CTP_FRAMEWORK_DIR)
   set_target_properties(ctp_core_link_test PROPERTIES BUILD_RPATH "${CTP_FRAMEWORK_DIR}")
 endif()
 add_test(NAME ctp_core_link COMMAND ctp_core_link_test)
+
+add_executable(ctp_position_table_test tests/PositionTableTest.cpp)
+target_link_libraries(ctp_position_table_test PRIVATE ors_core)
+target_compile_features(ctp_position_table_test PRIVATE cxx_std_20)
+if(CTP_FRAMEWORK_DIR)
+  set_target_properties(ctp_position_table_test PROPERTIES BUILD_RPATH "${CTP_FRAMEWORK_DIR}")
+endif()
+add_test(NAME ctp_position_table COMMAND ctp_position_table_test)

@@ -10,6 +10,7 @@
 #include <unordered_map>
 #include <thread>
 #include <map>
+#include <vector>
 
 #include "caslock.h"
 #include "MDHandler.h"
@@ -24,6 +25,7 @@
 
 #include "core/OrsConfig.h"
 #include "core/OrsTypes.h"
+#include "core/PositionTable.h"
 #include "transport/OrsTransport.h"
 
 using namespace std;
@@ -80,14 +82,6 @@ typedef struct _orderInfo
     char exchange;
     int qtyType; // is this open or close or closeyesterday
 } OrderInfo;
-
-typedef struct contractPostion
-{
-    int ONLongPos;
-    int todayLongPos;
-    int ONShortPos;
-    int todayShortPos;
-} contractPos;
 
 // local order id, order info
 typedef std::map<unsigned long, OrderInfo> OrderAccountMap;
@@ -156,6 +150,7 @@ public:
     // virtual void OnRtnDepthMarketData(CThostFtdcDepthMarketDataField *pDepthMarketData);
 
     virtual void OnRspQryInstrument(CThostFtdcInstrumentField *pInstrument, CThostFtdcRspInfoField *pRspInfo, int nRequestID, bool bIsLast);
+    virtual void OnRspQryInvestorPosition(CThostFtdcInvestorPositionField *pPosition, CThostFtdcRspInfoField *pRspInfo, int nRequestID, bool bIsLast);
     virtual void OnRspSettlementInfoConfirm(CThostFtdcSettlementInfoConfirmField *pSettlementInfoConfirm, CThostFtdcRspInfoField *pRspInfo, int nRequestID, bool bIsLast);
     virtual void OnRtnOrder(CThostFtdcOrderField *pOrder);
     virtual void OnRtnOrder(CThostFtdcOrderField *pOrder, CThostFtdcRspInfoField *pRspInfo);
@@ -199,9 +194,8 @@ private:
     int m_logonResp;
     illuminati::infra::RmsImpl rms;
 
-    std::map<std::string, contractPos> mapContractPos;
-    std::map<std::string, contractPos>::iterator mapContractPosIter;
-    illuminati::ds::CasLock contractPosLock;
+    ::ors::PositionTable positionTable_;
+    std::vector<::ors::PositionRow> pendingPositionRows_;
 
     std::string m_rmsConfigFile;
     std::string m_rmsFirmwideConfigFile;

@@ -267,85 +267,31 @@ void ORSServer::ProcessRequest(RequestMsg *req)
 
 void ORSServer::SetCombOffsetFlag(CThostFtdcInputOrderField &req, RequestMsg *request, char &flag, int &orderType)
 {
-    contractPosLock.lock();
+    const ::ors::OffsetReservation reservation = positionTable_.reserveForOrder(
+        req.InstrumentID, request->Transaction_Type, request->Quantity,
+        request->Exchange_Type == CHINA_SHFE);
 
-    mapContractPosIter = mapContractPos.find(std::string(req.InstrumentID));
-
-    if (mapContractPosIter == mapContractPos.end())
-    {
-        contractPos noPosition;
-        noPosition.ONLongPos = 0;
-        noPosition.todayLongPos = 0;
-        noPosition.ONShortPos = 0;
-        noPosition.todayShortPos = 0;
-
-        mapContractPos[std::string(req.InstrumentID)] = noPosition;
-        mapContractPosIter = mapContractPos.find(std::string(req.InstrumentID));
+    if (!reservation.valid) {
+        flag = THOST_FTDC_OF_Open;
+        orderType = OPEN_ORDER;
+        return;
     }
 
-    tempTimeStamp = illuminati::ITime_ClockRT::GetCurrentTime();
-    // ILOG(INFO) << "--->>> "<< tempTimeStamp << "|" << "Pos | " << req.InstrumentID << " | " <<  mapContractPosIter->second.ONLongPos << " | " <<  mapContractPosIter->second.todayLongPos << " | " << mapContractPosIter->second.ONShortPos << " | " << mapContractPosIter->second.todayShortPos << std::endl;
-
-    switch (request->Transaction_Type)
-    {
-    case BUY:
-        if (request->Quantity <= mapContractPosIter->second.todayShortPos)
-        {
-            if (request->Exchange_Type == CHINA_SHFE)
-            {
-                flag = THOST_FTDC_OF_CloseToday;
-            }
-            else
-            {
-                flag = THOST_FTDC_OF_Close;
-            }
-            mapContractPosIter->second.todayShortPos -= request->Quantity;
-            orderType = CLOSE_TODAY;
-        }
-        else if (request->Quantity <= mapContractPosIter->second.ONShortPos)
-        {
-            flag = THOST_FTDC_OF_Close;
-            mapContractPosIter->second.ONShortPos -= request->Quantity;
-            orderType = CLOSE_YESTERDAY;
-        }
-        else
-        {
-            flag = THOST_FTDC_OF_Open;
-            //				mapContractPosIter->second.todayLongPos += request->Quantity;
-            orderType = OPEN_ORDER;
-        }
+    orderType = static_cast<int>(reservation.action);
+    switch (reservation.action) {
+    case ::ors::PositionAction::CloseToday:
+        flag = (request->Exchange_Type == CHINA_SHFE)
+                   ? THOST_FTDC_OF_CloseToday
+                   : THOST_FTDC_OF_Close;
         break;
-    case SELL:
-        if (request->Quantity <= mapContractPosIter->second.todayLongPos)
-        {
-            if (request->Exchange_Type == CHINA_SHFE)
-            {
-                flag = THOST_FTDC_OF_CloseToday;
-            }
-            else
-            {
-                flag = THOST_FTDC_OF_Close;
-            }
-            mapContractPosIter->second.todayLongPos -= request->Quantity;
-            orderType = CLOSE_TODAY;
-        }
-        else if (request->Quantity <= mapContractPosIter->second.ONLongPos)
-        {
-            flag = THOST_FTDC_OF_Close;
-            mapContractPosIter->second.ONLongPos -= request->Quantity;
-            orderType = CLOSE_YESTERDAY;
-        }
-        else
-        {
-            flag = THOST_FTDC_OF_Open;
-            //                               mapContractPosIter->second.todayShortPos += request->Quantity;
-            orderType = OPEN_ORDER;
-        }
+    case ::ors::PositionAction::CloseYesterday:
+        flag = THOST_FTDC_OF_Close;
+        break;
+    case ::ors::PositionAction::Open:
+    default:
+        flag = THOST_FTDC_OF_Open;
         break;
     }
-    tempTimeStamp = illuminati::ITime_ClockRT::GetCurrentTime();
-    // ILOG(INFO) << "--->>> "<< tempTimeStamp << "|" << "Pos | " << req.InstrumentID << " | " <<  mapContractPosIter->second.ONLongPos << " | " <<  mapContractPosIter->second.todayLongPos << " | " << mapContractPosIter->second.ONShortPos << " | " << mapContractPosIter->second.todayShortPos << std::endl;
-    contractPosLock.unlock();
 }
 
 void ORSServer::SendNewOrder(RequestMsg *request)
@@ -761,99 +707,31 @@ void ORSServer::PushUpdate(ResponseMsg *resp)
 
 void ORSServer::updatePosition(OrderInfo &ordinfo, ResponseMsg *resp)
 {
-    contractPosLock.lock();
-    mapContractPosIter = mapContractPos.find(std::string(ordinfo.ScripCode));
-    tempTimeStamp = illuminati::ITime_ClockRT::GetCurrentTime();
-    // ILOG(INFO) << "|"<< tempTimeStamp << "|" << "Pos | " << ordinfo.ScripCode << " | " <<  mapContractPosIter->second.ONLongPos << " | " <<  mapContractPosIter->second.todayLongPos << " | " << mapContractPosIter->second.ONShortPos << " | " << mapContractPosIter->second.todayShortPos << std::endl;
-    switch (resp->Response_Type)
-    {
+    ::ors::PositionAction action = ::ors::PositionAction::Open;
+    if (ordinfo.qtyType == CLOSE_TODAY) {
+        action = ::ors::PositionAction::CloseToday;
+    } else if (ordinfo.qtyType == CLOSE_YESTERDAY) {
+        action = ::ors::PositionAction::CloseYesterday;
+    }
+
+    switch (resp->Response_Type) {
     case ORDER_ERROR:
-        ILOG(INFO) << "Currrent position: " << mapContractPosIter->second.todayLongPos << " " << mapContractPosIter->second.todayShortPos << " " << mapContractPosIter->second.ONShortPos << " " << mapContractPosIter->second.ONLongPos << "\n";
-        switch (ordinfo.qtyType)
-        {
-        case OPEN_ORDER:
-            // Do nothing
-            break;
-        case CLOSE_TODAY:
-            if (ordinfo.Transaction_Type == BUY)
-            {
-                mapContractPosIter->second.todayShortPos += ordinfo.Qty;
-            }
-            else
-            {
-                mapContractPosIter->second.todayLongPos += ordinfo.Qty;
-            }
-            break;
-        case CLOSE_YESTERDAY:
-            if (ordinfo.Transaction_Type == BUY)
-            {
-                mapContractPosIter->second.ONShortPos += ordinfo.Qty;
-            }
-            else
-            {
-                mapContractPosIter->second.ONLongPos += ordinfo.Qty;
-            }
-            break;
-        }
+        positionTable_.restoreOnFailure(ordinfo.ScripCode,
+                                        ordinfo.Transaction_Type, action,
+                                        static_cast<int>(ordinfo.Qty));
         break;
     case CANCEL_ORDER_CONFIRM:
-        switch (ordinfo.qtyType)
-        {
-        //				case OPEN_ORDER:
-        //				if(ordinfo.Transaction_Type == BUY)
-        //				{
-        //					mapContractPosIter->second.todayLongPos -= ordinfo.openQty;
-        //				}
-        //				else
-        //				{
-        //					mapContractPosIter->second.todayShortPos -= ordinfo.openQty;
-        //				}
-        //				break;
-        case CLOSE_TODAY:
-            if (ordinfo.Transaction_Type == BUY)
-            {
-                mapContractPosIter->second.todayShortPos += resp->Quantity; // ordinfo.openQty;
-            }
-            else
-            {
-                mapContractPosIter->second.todayLongPos += resp->Quantity; // ordinfo.openQty;
-            }
-            break;
-        case CLOSE_YESTERDAY:
-            if (ordinfo.Transaction_Type == BUY)
-            {
-                mapContractPosIter->second.ONShortPos += resp->Quantity; // ordinfo.openQty;
-            }
-            else
-            {
-                mapContractPosIter->second.ONLongPos += resp->Quantity; // ordinfo.openQty;
-            }
-            break;
-        }
+        positionTable_.restoreOnFailure(ordinfo.ScripCode,
+                                        ordinfo.Transaction_Type, action,
+                                        resp->Quantity);
         break;
     case TRADE_CONFIRM:
-        switch (ordinfo.qtyType)
-        {
-        case OPEN_ORDER:
-            if (ordinfo.Transaction_Type == BUY)
-            {
-                mapContractPosIter->second.todayLongPos += resp->Quantity;
-            }
-            else
-            {
-                mapContractPosIter->second.todayShortPos += resp->Quantity;
-            }
-            break;
-        case CLOSE_TODAY:
-        case CLOSE_YESTERDAY:
-            // dont update here since while sending we have already updated the maps
-            break;
-        }
+        positionTable_.applyTrade(ordinfo.ScripCode, ordinfo.Transaction_Type,
+                                  action, resp->Quantity);
+        break;
+    default:
         break;
     }
-    tempTimeStamp = illuminati::ITime_ClockRT::GetCurrentTime();
-    // ILOG(INFO) << "|"<< tempTimeStamp << "|" << "Pos | " << ordinfo.ScripCode << " | " <<  mapContractPosIter->second.ONLongPos << " | " <<  mapContractPosIter->second.todayLongPos << " | " << mapContractPosIter->second.ONShortPos << " | " << mapContractPosIter->second.todayShortPos << std::endl;
-    contractPosLock.unlock();
 }
 
 void ORSServer::RejectOrder(RequestMsg *req, const char *Reason)
@@ -972,7 +850,15 @@ void ORSServer::ReqQryInstrument(char *szInstrumentID)
 
 void ORSServer::ReqQryPosition()
 {
-    return; // modify by pqr 20230213
+    CThostFtdcQryInvestorPositionField request;
+    memset(&request, 0, sizeof(request));
+    strcpy(request.BrokerID, m_BROKER_ID.c_str());
+    strcpy(request.InvestorID, m_INVESTOR_ID.c_str());
+    const int result = m_pUserTradeApi->ReqQryInvestorPosition(
+        &request, ++m_iRequestID);
+    if (result != 0) {
+        ILOG(INFO) << "Position query failed rc=" << result << std::endl;
+    }
 }
 
 void ORSServer::ReqQryAccount()
@@ -1038,6 +924,37 @@ void ORSServer::OnRspQryInstrument(CThostFtdcInstrumentField *pInstrument, CThos
                    << "Instrument query complete" << std::endl;
         m_pUserMDSpi->SubscribeMarketData();
         rms.setExchangeInstrDefinitionMap(m_symbolMap, true, true, false);
+        ReqQryPosition();
+    }
+}
+
+void ORSServer::OnRspQryInvestorPosition(
+    CThostFtdcInvestorPositionField *pPosition,
+    CThostFtdcRspInfoField *pRspInfo, int nRequestID, bool bIsLast)
+{
+    if (pRspInfo != nullptr && pRspInfo->ErrorID != 0) {
+        pendingPositionRows_.clear();
+        ILOG(INFO) << "Position query error: " << pRspInfo->ErrorID << " "
+                   << pRspInfo->ErrorMsg << std::endl;
+        return;
+    }
+
+    if (pPosition != nullptr) {
+        ::ors::PositionRow row;
+        row.instrumentId = pPosition->InstrumentID;
+        row.side = pPosition->PosiDirection == THOST_FTDC_PD_Short
+                       ? ::ors::PositionSide::Short
+                       : ::ors::PositionSide::Long;
+        row.position = pPosition->Position;
+        row.todayPosition = pPosition->TodayPosition;
+        pendingPositionRows_.push_back(std::move(row));
+    }
+
+    if (bIsLast) {
+        positionTable_.replaceFromQuery(std::move(pendingPositionRows_));
+        pendingPositionRows_.clear();
+        m_connected = true;
+        ILOG(INFO) << "Position query complete; ORS ready" << std::endl;
     }
 }
 
