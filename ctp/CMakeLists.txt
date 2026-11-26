@@ -3,6 +3,12 @@ cmake_minimum_required(VERSION 3.25)
 find_package(CTP REQUIRED)
 find_package(Threads REQUIRED)
 
+set(CONTRACT_GENERATED_DIR "${CMAKE_BINARY_DIR}/generated/contract" CACHE PATH
+    "Directory produced by tools/gen_contract_cpp.sh")
+if(NOT EXISTS "${CONTRACT_GENERATED_DIR}/com_quantlink_contract_sbe/OrsRequest.h")
+  message(WARNING "C++ contract headers missing; run tools/gen_contract_cpp.sh")
+endif()
+
 find_path(SPDLOG_INCLUDE_DIR NAMES spdlog/spdlog.h HINTS /root/quantlink-trading/tbadmin/inc)
 if(NOT SPDLOG_INCLUDE_DIR)
   message(FATAL_ERROR "SPDLOG_INCLUDE_DIR is required (spdlog/spdlog.h)")
@@ -52,6 +58,11 @@ target_link_libraries(ors_core PUBLIC ors_base CTP::trader CTP::md Threads::Thre
 target_compile_features(ors_core PUBLIC cxx_std_20)
 target_compile_definitions(ors_core PUBLIC _USE_CTP_=1)
 
+add_library(ors_codec STATIC contract/OrsCodec.cpp)
+target_include_directories(ors_codec PUBLIC "${CONTRACT_GENERATED_DIR}")
+target_link_libraries(ors_codec PUBLIC ors_core)
+target_compile_features(ors_codec PUBLIC cxx_std_20)
+
 add_executable(ctp_core_link_test tests/CoreLinkTest.cpp)
 target_link_libraries(ctp_core_link_test PRIVATE ors_core)
 target_compile_features(ctp_core_link_test PRIVATE cxx_std_20)
@@ -95,3 +106,11 @@ if(CTP_FRAMEWORK_DIR)
   set_target_properties(ctp_account_query_state_test PROPERTIES BUILD_RPATH "${CTP_FRAMEWORK_DIR}")
 endif()
 add_test(NAME ctp_account_query_state COMMAND ctp_account_query_state_test)
+
+add_executable(ctp_ors_codec_test tests/OrsCodecTest.cpp)
+target_link_libraries(ctp_ors_codec_test PRIVATE ors_codec)
+target_compile_features(ctp_ors_codec_test PRIVATE cxx_std_20)
+if(CTP_FRAMEWORK_DIR)
+  set_target_properties(ctp_ors_codec_test PROPERTIES BUILD_RPATH "${CTP_FRAMEWORK_DIR}")
+endif()
+add_test(NAME ctp_ors_codec COMMAND ctp_ors_codec_test)

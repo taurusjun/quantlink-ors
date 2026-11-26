@@ -1,34 +1,21 @@
 #!/usr/bin/env bash
-# Generate contract 0.2.0 C++ SBE headers. Generated files stay in build/.
+# Generate the C++ SBE headers consumed by ORS. The contract schema remains the
+# only source; generated files are build artifacts, not committed.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-CONTRACT="${CONTRACT_HOME:-/opt/quantlink-venue-contract}"
-OUT="${CONTRACT_GENERATED_DIR:-$ROOT/build/generated/contract}"
-SBE_JAR="${SBE_JAR:-$ROOT/.tools/sbe-all-1.35.6.jar}"
+CONTRACT_HOME="${CONTRACT_HOME:-/Users/wangjun/PG/quantlink-new/quantlink-venue-contract}"
+SCHEMA="${SCHEMA:-$CONTRACT_HOME/abi/sbe/quantlink-fin-sbe.xml}"
+OUT="${1:-$ROOT/build/generated/contract}"
+SBE_JAR="${SBE_JAR:-/Users/wangjun/PG/quantlink-fin/.tools/sbe-all-1.35.6.jar}"
+JAVA_BIN="${JAVA_BIN:-java}"
 
-while [ "$#" -gt 0 ]; do
-  case "$1" in
-    --contract) CONTRACT="$2"; shift 2 ;;
-    --version) shift 2 ;;
-    --output) OUT="$2"; shift 2 ;;
-    *) echo "unknown argument: $1" >&2; exit 2 ;;
-  esac
-done
-
-SCHEMA="$CONTRACT/abi/sbe/quantlink-fin-sbe.xml"
-if [ ! -f "$SCHEMA" ]; then
-  echo "missing contract schema: $SCHEMA" >&2
-  exit 1
-fi
 if [ ! -f "$SBE_JAR" ]; then
   echo "missing SBE jar: $SBE_JAR" >&2
-  echo "set SBE_JAR or download sbe-all-1.35.6.jar" >&2
   exit 1
 fi
 
 rm -rf "$OUT"
 mkdir -p "$OUT"
-java -Dsbe.target.language=Cpp -Dsbe.output.dir="$OUT" \
-  -jar "$SBE_JAR" "$SCHEMA"
-echo "contract C++ SBE generated at $OUT"
+"$JAVA_BIN" -Dsbe.target.language=Cpp -Dsbe.output.dir="$OUT" -jar "$SBE_JAR" "$SCHEMA"
+echo "C++ contract codegen OK: $OUT"
