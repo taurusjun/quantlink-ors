@@ -174,94 +174,84 @@ int main(int argc, char** argv) {
         .caLevel(0);
     const std::uint64_t orderId =
         static_cast<std::uint64_t>(clientId) * 1'000'000ULL;
-    order.requestType(RequestType::NEW_ORDER)
-        .orderType(OrderType::LIMIT)
-        .duration(OrderDuration::DAY)
-        .priceType(PriceType::PER_UNIT)
-        .positionDirection(PositionDirection::OPEN)
-        .orderId(static_cast<std::uint32_t>(orderId))
-        .token(0)
-        .quantity(1)
-        .quantityFilled(0)
-        .disclosedQty(1)
-        .price(lastPrice - 10.0)
-        .timestamp(nowNanos())
-        .putAccountId(cfg.accountId)
-        .transactionType(TransactionType::BUY)
-        .exchangeType(57);
-    if (!send(*client.request, buffer,
-              order.encodedLength() + MessageHeader::encodedLength())) {
-      std::cerr << "order send failed\n";
+
+    auto sendOrder = [&](std::uint32_t id, TransactionType::Value transaction,
+                         PositionDirection::Value direction, double price) {
+      OrsRequest request;
+      request.wrapAndApplyHeader(buffer, 0, sizeof(buffer))
+          .contractDescription()
+          .putInstrumentName(cfg.instrument)
+          .putSymbol(cfg.instrument)
+          .expiryDate(0)
+          .strikePrice(0)
+          .putOptionType(std::string_view("XX"))
+          .caLevel(0);
+      request.requestType(RequestType::NEW_ORDER)
+          .orderType(OrderType::LIMIT)
+          .duration(OrderDuration::DAY)
+          .priceType(PriceType::PER_UNIT)
+          .positionDirection(direction)
+          .orderId(id)
+          .token(0)
+          .quantity(1)
+          .quantityFilled(0)
+          .disclosedQty(1)
+          .price(price)
+          .timestamp(nowNanos())
+          .putAccountId(cfg.accountId)
+          .transactionType(transaction)
+          .exchangeType(57);
+      return send(*client.request, buffer,
+                  request.encodedLength() + MessageHeader::encodedLength());
+    };
+
+    auto waitTrade = [&](std::uint32_t expectedOrderId,
+                         const char* label) -> bool {
+      const auto deadline = Clock::now() + std::chrono::seconds(12);
+      while (Clock::now() < deadline) {
+        bool traded = false;
+        poll(*client.response, [&](const char* data, std::size_t len) {
+          if (templateId(data, len) != OrsResponse::sbeTemplateId()) return;
+          MessageHeader header;
+          header.wrap(const_cast<char*>(data), 0, 0, len);
+          OrsResponse response;
+          response.wrapForDecode(const_cast<char*>(data),
+                                 MessageHeader::encodedLength(),
+                                 header.blockLength(), header.version(), len);
+          std::cout << label << " response type="
+                    << static_cast<int>(response.responseType())
+                    << " orderId=" << response.orderId()
+                    << " error=" << response.errorCode() << '\n';
+          if (response.orderId() == expectedOrderId &&
+              response.responseType() == ResponseType::TRADE_CONFIRM) {
+            traded = true;
+          }
+        });
+        if (traded) return true;
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+      }
+      return false;
+    };
+
+    if (!sendOrder(static_cast<std::uint32_t>(orderId), TransactionType::BUY,
+                   PositionDirection::OPEN, lastPrice + 10.0)) {
+      std::cerr << "buy send failed\n";
+      return 1;
+    }
+    if (!waitTrade(static_cast<std::uint32_t>(orderId), "buy")) {
+      std::cerr << "buy trade timeout\n";
       return 1;
     }
 
-    bool orderResponse = false;
-    const auto orderDeadline = Clock::now() + std::chrono::seconds(10);
-    while (Clock::now() < orderDeadline && !orderResponse) {
-      poll(*client.response, [&](const char* data, std::size_t len) {
-        if (templateId(data, len) != OrsResponse::sbeTemplateId()) return;
-        MessageHeader header;
-        header.wrap(const_cast<char*>(data), 0, 0, len);
-        OrsResponse response;
-        response.wrapForDecode(const_cast<char*>(data),
-                               MessageHeader::encodedLength(),
-                               header.blockLength(), header.version(), len);
-        std::cout << "order response type="
-                  << static_cast<int>(response.responseType())
-                  << " orderId=" << response.orderId()
-                  << " error=" << response.errorCode() << '\n';
-        orderResponse = true;
-      });
-      std::this_thread::sleep_for(std::chrono::milliseconds(20));
-    }
-    if (!orderResponse) {
-      std::cerr << "order response timeout\n";
+    if (!sendOrder(static_cast<std::uint32_t>(orderId + 1),
+                   TransactionType::SELL, PositionDirection::CLOSE,
+                   lastPrice - 10.0)) {
+      std::cerr << "close send failed\n";
       return 1;
     }
-
-    OrsRequest cancel;
-    cancel.wrapAndApplyHeader(buffer, 0, sizeof(buffer))
-        .contractDescription()
-        .putInstrumentName(cfg.instrument)
-        .putSymbol(cfg.instrument)
-        .expiryDate(0)
-        .strikePrice(0)
-        .putOptionType(std::string_view("XX"))
-        .caLevel(0);
-    cancel.requestType(RequestType::CANCEL_ORDER)
-        .orderType(OrderType::LIMIT)
-        .duration(OrderDuration::DAY)
-        .priceType(PriceType::PER_UNIT)
-        .positionDirection(PositionDirection::OPEN)
-        .orderId(static_cast<std::uint32_t>(orderId))
-        .quantity(1)
-        .price(lastPrice - 10.0)
-        .timestamp(nowNanos())
-        .putAccountId(cfg.accountId)
-        .transactionType(TransactionType::BUY)
-        .exchangeType(57);
-    send(*client.request, buffer,
-         cancel.encodedLength() + MessageHeader::encodedLength());
-
-    const auto cancelDeadline = Clock::now() + std::chrono::seconds(10);
-    while (Clock::now() < cancelDeadline) {
-      bool done = false;
-      poll(*client.response, [&](const char* data, std::size_t len) {
-        if (templateId(data, len) != OrsResponse::sbeTemplateId()) return;
-        MessageHeader header;
-        header.wrap(const_cast<char*>(data), 0, 0, len);
-        OrsResponse response;
-        response.wrapForDecode(const_cast<char*>(data),
-                               MessageHeader::encodedLength(),
-                               header.blockLength(), header.version(), len);
-        std::cout << "cancel response type="
-                  << static_cast<int>(response.responseType())
-                  << " orderId=" << response.orderId()
-                  << " error=" << response.errorCode() << '\n';
-        done = true;
-      });
-      if (done) break;
-      std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    if (!waitTrade(static_cast<std::uint32_t>(orderId + 1), "close")) {
+      std::cerr << "close trade timeout\n";
+      return 1;
     }
 
     AccountQuery accountQuery;
