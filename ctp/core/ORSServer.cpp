@@ -9,6 +9,7 @@
 #include "rmsimpl.hpp"
 #include "logger.h"
 #include "processsettings.h"
+#include "query/QueryMapping.h"
 
 using namespace std;
 using namespace illuminati::infra;
@@ -229,20 +230,8 @@ void ORSServer::OnRspQryTradingAccount(
         return;
     }
 
-    ::ors::AccountSnapshot snapshot;
-    snapshot.requestId = *sdkRequestId;
-    snapshot.accountId = config_.accountId;
-    snapshot.tradingDay = pAccount->TradingDay;
-    snapshot.balance = pAccount->Balance;
-    snapshot.available = pAccount->Available;
-    snapshot.margin = pAccount->CurrMargin;
-    snapshot.frozenMargin = pAccount->FrozenMargin;
-    snapshot.commission = pAccount->Commission;
-    snapshot.closeProfit = pAccount->CloseProfit;
-    snapshot.positionProfit = pAccount->PositionProfit;
-    snapshot.deposit = pAccount->Deposit;
-    snapshot.withdraw = pAccount->Withdraw;
-    snapshot.errorCode = 0;
+    ::ors::AccountSnapshot snapshot =
+        ::ors::mapAccountSnapshot(*pAccount, *sdkRequestId, config_);
     snapshot.timestamp = illuminati::ITime_ClockRT::GetCurrentTime();
     transport_.sendAccount(snapshot);
     accountQueryState_.finish();

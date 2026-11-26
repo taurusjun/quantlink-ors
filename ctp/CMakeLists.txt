@@ -52,6 +52,8 @@ add_library(ors_core STATIC
     core/PositionTable.cpp
     control/ClientRegistry.cpp
     query/AccountQueryState.cpp
+    query/QueryMapping.cpp
+    control/OpenOrderGuard.cpp
     log/Log.cpp
     transport/InMemoryOrsTransport.cpp
     vendor/hftbase/tinyxml2.cpp
@@ -134,6 +136,22 @@ if(CTP_FRAMEWORK_DIR)
   set_target_properties(ctp_account_query_state_test PROPERTIES BUILD_RPATH "${CTP_FRAMEWORK_DIR}")
 endif()
 add_test(NAME ctp_account_query_state COMMAND ctp_account_query_state_test)
+
+add_executable(ctp_open_order_guard_test tests/OpenOrderGuardTest.cpp)
+target_link_libraries(ctp_open_order_guard_test PRIVATE ors_core)
+target_compile_features(ctp_open_order_guard_test PRIVATE cxx_std_20)
+if(CTP_FRAMEWORK_DIR)
+  set_target_properties(ctp_open_order_guard_test PROPERTIES BUILD_RPATH "${CTP_FRAMEWORK_DIR}")
+endif()
+add_test(NAME ctp_open_order_guard COMMAND ctp_open_order_guard_test)
+
+add_executable(ctp_query_mapping_test tests/QueryMappingTest.cpp)
+target_link_libraries(ctp_query_mapping_test PRIVATE ors_core)
+target_compile_features(ctp_query_mapping_test PRIVATE cxx_std_20)
+if(CTP_FRAMEWORK_DIR)
+  set_target_properties(ctp_query_mapping_test PROPERTIES BUILD_RPATH "${CTP_FRAMEWORK_DIR}")
+endif()
+add_test(NAME ctp_query_mapping COMMAND ctp_query_mapping_test)
 
 add_executable(ctp_ors_codec_test tests/OrsCodecTest.cpp)
 target_link_libraries(ctp_ors_codec_test PRIVATE ors_codec)
