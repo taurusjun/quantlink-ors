@@ -14,6 +14,7 @@
 #include "ors/ctp/CtpQueryService.h"
 #include "ors/ctp/CtpSession.h"
 #include "ors/ctp/InboundValidation.h"
+#include "ors/ctp/QueryCadence.h"
 #include "ors/ctp/SessionRecovery.h"
 #include "ors/base/Log.h"
 #include "ors/base/Metrics.h"
@@ -224,11 +225,19 @@ struct ContractRuntime::Impl final : ExecutionSink, SnapshotSink {
     publishSession();
     lastTraderState = trader.state();
     std::thread queryThread([this] {
+      QueryKind next = QueryKind::Account;
       while (!stopping.load(std::memory_order_relaxed)
              && !stopRequested.load(std::memory_order_relaxed)) {
         if (trader.state() == SessionState::Ready) {
-          queries.queryAccount();
-          queries.queryPositions();
+          const bool account = next == QueryKind::Account;
+          const bool ok = account ? queries.queryAccount() : queries.queryPositions();
+          if (!ok) {
+            metrics.queryFailures.fetch_add(1, std::memory_order_relaxed);
+            emit(spdlog::level::warn, "query.failed",
+                 {base::LogField("query", account ? "account" : "position"),
+                  base::LogField("reason", queries.lastError())});
+          }
+          next = nextQuery(next);
         }
         std::this_thread::sleep_for(std::chrono::seconds(runtimeConfig.queryIntervalSeconds));
       }

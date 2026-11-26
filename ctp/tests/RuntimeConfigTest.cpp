@@ -165,6 +165,21 @@ int main() {
   check(defaults.queryIntervalSeconds == 1, "QUERY_INTERVAL_SECONDS defaults to 1");
   check(defaults.logFile == "./log/ors.jsonl", "LOG_FILE defaults to ./log/ors.jsonl");
 
+  const std::string zeroInterval =
+      writeConfig(dir / "zero_interval.cfg",
+                  "AERON_DIR = /tmp/aeron\n"
+                  "VENUE_ID = SIMNOW\n"
+                  "ORS_ID = ors\n"
+                  "ENVIRONMENT = SHADOW\n"
+                  "EXCHANGE = SHFE\n"
+                  "INSTRUMENTS = au2612\n"
+                  "STREAM_BASE = 9000\n"
+                  "SOURCE_PUBLICATION_EPOCH = 1\n"
+                  "QUERY_INTERVAL_SECONDS = 0\n");
+  check(throwsContaining([&] { ContractRuntimeConfig::load(zeroInterval); },
+                         "QUERY_INTERVAL_SECONDS"),
+        "zero query interval is rejected");
+
   const std::string overVenue =
       writeConfig(dir / "over_venue.cfg",
                   "AERON_DIR = /tmp/aeron\n"
