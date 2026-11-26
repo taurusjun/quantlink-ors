@@ -7,11 +7,8 @@
 #include "log/Log.h"
 #include "log/Metrics.h"
 #include "core/Time.h"
-#include "statscollector.h"
 #include "sstream"
 #include "rmsimpl.hpp"
-#include "logger.h"
-#include "processsettings.h"
 #include "query/QueryMapping.h"
 
 using namespace std;
@@ -59,7 +56,7 @@ extern int iInstrumentID;
 void ORSServer::registerStats()
 {
     ::ors::metrics().init(
-        config_.logPath + ITime_Logger::GetCurrentYYYYMMDD());
+        config_.logPath + std::string{});
     // shmread = ::ors::metrics().registerStat( "ShmRead", 50, 200 ) ;
     orsLatency = ::ors::metrics().registerStat("MsgCreation", 2000, 5000);
 

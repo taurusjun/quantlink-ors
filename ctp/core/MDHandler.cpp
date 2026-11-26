@@ -7,7 +7,6 @@
 #include "MDHandler.h"
 #include "log/Log.h"
 #include "log/Metrics.h"
-#include "statsrecorder.h"
 
 using namespace std;
 using namespace illuminati;

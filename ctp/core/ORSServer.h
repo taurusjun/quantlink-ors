@@ -16,10 +16,9 @@
 #include "MDHandler.h"
 #include "orderresponse.h"
 #include "marketupdateNew.h"
-#include <signal.h>
-#include "logger.h"
-#include "errorcodes.h"
 #include "itimer.h"
+#include <signal.h>
+#include "errorcodes.h"
 
 #include "rmsimpl.hpp"
 
