@@ -44,6 +44,8 @@ target_compile_definitions(ors_base PRIVATE
 
 add_library(ors_core STATIC
     core/ORSServer.cpp
+    core/RuntimeGlobals.cpp
+    core/ORSServerStubs.cpp
     core/MdSpi.cpp
     core/MDHandler.cpp
     core/OrsConfig.cpp
@@ -52,7 +54,8 @@ add_library(ors_core STATIC
     query/AccountQueryState.cpp
     log/Log.cpp
     transport/InMemoryOrsTransport.cpp
-    vendor/hftbase/tinyxml2.cpp)
+    vendor/hftbase/tinyxml2.cpp
+    vendor/hftbase/rmschecks.cpp)
 target_include_directories(ors_core PUBLIC ${ORS_INCLUDE_DIRS})
 target_link_libraries(ors_core PUBLIC ors_base CTP::trader CTP::md Threads::Threads)
 target_compile_features(ors_core PUBLIC cxx_std_20)
@@ -150,3 +153,11 @@ if(CTP_FRAMEWORK_DIR)
   set_target_properties(ctp_md_handler_test PROPERTIES BUILD_RPATH "${CTP_FRAMEWORK_DIR}")
 endif()
 add_test(NAME ctp_md_handler COMMAND ctp_md_handler_test)
+
+add_executable(ctp_order_parity_test tests/OrderParityTest.cpp tests/CtpLinkStubs.cpp)
+target_link_libraries(ctp_order_parity_test PRIVATE ors_core)
+target_compile_features(ctp_order_parity_test PRIVATE cxx_std_20)
+if(CTP_FRAMEWORK_DIR)
+  set_target_properties(ctp_order_parity_test PROPERTIES BUILD_RPATH "${CTP_FRAMEWORK_DIR}")
+endif()
+add_test(NAME ctp_order_parity COMMAND ctp_order_parity_test)

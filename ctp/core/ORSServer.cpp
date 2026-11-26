@@ -662,12 +662,6 @@ void ORSServer::SendCancelOrder(RequestMsg *request)
     uint64_t rmstime, apisend;
     uint64_t curtime = illuminati::ITime_ClockRT::GetCurrentTime();
 
-    if (!rms.executeCancelOrderChecks(*request))
-    {
-        return;
-    }
-    rmstime = illuminati::ITime_ClockRT::GetCurrentTime();
-
     memset(&req, 0, sizeof(req));
 
     m_ordLocalMapLock.lock();
@@ -679,6 +673,12 @@ void ORSServer::SendCancelOrder(RequestMsg *request)
     }
     ordinfo = m_ordLocalMap[request->OrderID];
     m_ordLocalMapLock.unlock();
+
+    if (!rms.executeCancelOrderChecks(*request))
+    {
+        return;
+    }
+    rmstime = illuminati::ITime_ClockRT::GetCurrentTime();
 
     strcpy(req.BrokerID, m_BROKER_ID.c_str());
     // strcpy(req.UserID, m_BROKER_ID.c_str());

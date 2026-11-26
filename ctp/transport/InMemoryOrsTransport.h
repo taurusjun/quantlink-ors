@@ -20,6 +20,9 @@ class InMemoryOrsTransport final : public OrsTransport {
   void stop() override;
 
   std::size_t responseCount() const { return responses_.size(); }
+  const std::vector<illuminati::infra::ResponseMsg>& responses() const {
+    return responses_;
+  }
   const std::vector<AccountSnapshot>& accounts() const { return accounts_; }
   const std::vector<SessionEvent>& sessions() const { return sessions_; }
 
