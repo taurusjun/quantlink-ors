@@ -11,7 +11,7 @@ L0 / ORS
 
 设计文档：
 
-- [L0 ORS 设计（当前，2026-11-26）](docs/2026-11-26-l0-ors-design.md)
+- [L0 ORS 设计（当前，2026-11-26）](docs/v3-l0-ors-design.md)
 - [L0-L6 边界复盘](docs/2026-11-26-layer-boundaries-review.md)
 - [历史：L0 ORS CTP 对接方案（2026-11-24）](docs/2026-11-24-l0-ors-ctp-design.md)
 - [CTP/SimNow 验收记录（PARTIAL）](docs/2026-11-24-ctp-acceptance.md)
