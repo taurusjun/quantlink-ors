@@ -36,5 +36,33 @@ int main() {
     std::cerr << "unknown cancel did not return CANCEL_ORDER_REJECT\n";
     return 1;
   }
+
+  OrderInfo order{};
+  order.localID = 42;
+  order.requestType = illuminati::infra::CANCELORDER;
+  order.Transaction_Type = 'B';
+  order.Qty = 1;
+  order.Price = 725.0;
+  std::strcpy(order.exchID, "000000000001");
+  std::strcpy(order.ScripCode, "au2612");
+  server.m_ordLocalMap[42] = order;
+  server.m_ordExchMap["000000000001"] = 42;
+
+  CThostFtdcOrderActionField action{};
+  std::strcpy(action.OrderRef, "000000000001");
+  action.LimitPrice = 725.0;
+  action.VolumeChange = 1;
+  CThostFtdcRspInfoField error{};
+  error.ErrorID = 26;
+  std::strcpy(error.ErrorMsg, "cancel reject");
+  server.OnRspOrderAction(&action, &error, 1, true);
+
+  if (transport.responseCount() != 2 ||
+      transport.responses()[1].Response_Type !=
+          illuminati::infra::CANCEL_ORDER_REJECT ||
+      server.m_ordLocalMap.count(42) != 1) {
+    std::cerr << "cancel reject did not keep the original order\n";
+    return 1;
+  }
   return 0;
 }

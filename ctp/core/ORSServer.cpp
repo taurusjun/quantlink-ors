@@ -1301,12 +1301,24 @@ void ORSServer::RemoveFromMap(const char *exchid, int32_t localid)
 
 void ORSServer::OnRspOrderAction(CThostFtdcOrderActionField *pOrderAction, CThostFtdcRspInfoField *pRspInfo, int nRequestID, bool bIsLast)
 {
-    tempTimeStamp = illuminati::ITime_ClockRT::GetCurrentTime();
-    ILOG(INFO) << "------> " << tempTimeStamp << "|" << __FUNCTION__ << " start OrderRef" << pOrderAction->OrderRef << std::endl;
-    bool bRemoveOrder = false;
-    tempTimeStamp = illuminati::ITime_ClockRT::GetCurrentTime();
-    ILOG(INFO) << "--->>> " << tempTimeStamp << "|" << __FUNCTION__ << "OrderSysID : " << pOrderAction->OrderRef << " ErrorID : " << pRspInfo->ErrorID << " ErrorMsg : " << pRspInfo->ErrorMsg << std::endl;
-    ILOG(INFO) << "------> " << tempTimeStamp << "|" << __FUNCTION__ << " end OrderRef" << pOrderAction->OrderRef << std::endl;
+    if (!bIsLast || pOrderAction == nullptr || pRspInfo == nullptr ||
+        pRspInfo->ErrorID == 0) {
+        return;
+    }
+
+    OrderInfo order;
+    if (!GetOrderInfo(pOrderAction->OrderRef, order)) {
+        return;
+    }
+
+    ResponseMsg response;
+    response.Response_Type = CANCEL_ORDER_REJECT;
+    response.OrderID = order.localID;
+    response.ErrorCode = pRspInfo->ErrorID;
+    response.Price = pOrderAction->LimitPrice;
+    response.Quantity = pOrderAction->VolumeChange;
+    std::strncpy(response.AccountID, config_.accountId.c_str(), sizeof(response.AccountID) - 1);
+    PushUpdate(&response);
 }
 
 void ORSServer::OnRspOrderInsert(CThostFtdcInputOrderField *pInputOrder, CThostFtdcRspInfoField *pRspInfo, int nRequestID, bool bIsLast)
