@@ -1,0 +1,221 @@
+#ifndef _ORS_SERVER_H
+#define _ORS_SERVER_H
+
+
+
+#include "ThostFtdcTraderApi.h"
+#include "MdSpi.h"
+
+#include "iostream"
+#include <unordered_map>
+#include <thread>
+#include <map>
+
+#include "caslock.h"
+#include "MDHandler.h"
+#include "orderresponse.h"
+#include "marketupdateNew.h"
+#include <signal.h>
+#include "logger.h"
+#include "errorcodes.h"
+#include "itimer.h"
+
+#include "rmsimpl.hpp"
+
+#include "core/OrsConfig.h"
+#include "core/OrsTypes.h"
+#include "transport/OrsTransport.h"
+
+using namespace std;
+using namespace illuminati::infra;
+using namespace illuminati;
+using namespace illuminati::md;
+
+typedef struct _masterData
+{
+    char ScripCode[31];
+    unsigned long RoundLot;
+    unsigned long DecimalLocator;
+    double Factor;
+    long DPRHigh;
+    long DPRLow;
+    unsigned long Price;
+    char ExpiryDate[9];
+    char InstrumentCode[21];
+    char OptionType[3];
+    int StrikePrice;
+    char ExchangeID[31];
+    int MaxMarketOrderVolume;
+    int MinMarketOrderVolume;
+    int MaxLimitOrderVolume;
+    int MinLimitOrderVolume;
+    double PriceTick;
+    bool IsTrading;
+    // can be used to set falg while sending new order
+    int NetPositon;
+} MasterData;
+
+typedef std::unordered_map<std::string, MasterData> SymbolMap;
+typedef std::unordered_map<std::string, MasterData>::iterator SymbolMapIter;
+
+typedef struct _orderInfo
+{
+    RequestType requestType;
+    bool orderSent;
+    unsigned long localID;
+    char exchID[31];
+    char OrderSysID[21];
+    char ClientID[11];
+    char ScripCode[31];
+    unsigned char Transaction_Type;
+    // just for RMS
+    double Price;
+    unsigned long Qty;
+    double oldPrice;
+    unsigned long oldQty;
+    unsigned long ModQtySent;
+    // to keep track if the order is completely traded or open
+    unsigned long openQty;
+    uint64_t sendTime;
+    char exchange;
+    int qtyType; // is this open or close or closeyesterday
+} OrderInfo;
+
+typedef struct contractPostion
+{
+    int ONLongPos;
+    int todayLongPos;
+    int ONShortPos;
+    int todayShortPos;
+} contractPos;
+
+// local order id, order info
+typedef std::map<unsigned long, OrderInfo> OrderAccountMap;
+typedef std::map<unsigned long, OrderInfo>::iterator OrderAccountMapIter;
+
+typedef std::map<std::string, uint32_t> OrderAccountMap2;
+typedef std::map<std::string, uint32_t>::iterator OrderAccountMapIter2;
+
+class ORSServer : public CThostFtdcTraderSpi
+{
+public:
+    ORSServer(::ors::OrsConfig config, ::ors::OrsTransport& transport);
+    ~ORSServer();
+    void ProcessRequest(RequestMsg *);
+    void Login();
+    void Start();
+    void Stop();
+    void RejectOrder(RequestMsg *, const char *);
+    inline __attribute__((always_inline)) void PushUpdate(ResponseMsg *);
+    inline __attribute__((always_inline)) bool OrderCrossCheck(RequestMsg *);
+    void RmsError(ResponseType, uint32_t, uint32_t);
+    void RmsWarning(ResponseType, uint32_t, uint32_t);
+
+    illuminati::infra::RmsImpl &getRms()
+    {
+        return rms;
+    }
+
+    SymbolMap m_symbolMap;
+    OrderAccountMap m_ordLocalMap;
+    OrderAccountMap2 m_ordExchMap;
+    illuminati::ds::CasLock m_ordExchMapLock;
+    volatile bool m_connected;
+    bool m_logReqResp;
+    std::thread m_reqrespLogger;
+    int m_iRequestID;
+    std::string m_BROKER_ID;
+    std::string m_INVESTOR_ID;
+    std::string m_INVESTOR_ID_SHFE;
+    std::string m_INVESTOR_ID_CFFEX;
+    std::string m_INVESTOR_ID_DCE;
+    std::string m_INVESTOR_ID_ZCE;
+    std::string m_PASSWORD;
+    std::string m_NEWPASSWORD;
+    std::string m_AUTHCODE{""};
+    std::string m_APPID{""};
+    int iNextOrderRef;
+
+    void logOrderInfoResponse(const char *, OrderInfo &ordinfo,
+                              ResponseMsg *resp);
+
+    CThostFtdcTraderApi *m_pUserTradeApi;
+    CThostFtdcMdApi *m_pUserMDApi;
+    CMdSpi *m_pUserMDSpi;
+
+    virtual void OnFrontConnected();
+    virtual void OnFrontDisconnected(int nReason);
+    virtual void OnRspAuthenticate(CThostFtdcRspAuthenticateField *pRspAuthenticateField, CThostFtdcRspInfoField *pRspInfo, int nRequestID, bool bIsLast);
+    virtual void OnRspUserLogin(CThostFtdcRspUserLoginField *pRspUserLogin, CThostFtdcRspInfoField *pRspInfo, int nRequestID, bool bIsLast);
+    virtual void OnRspUserLogout(CThostFtdcUserLogoutField *, CThostFtdcRspInfoField *, int, bool);
+    virtual void OnRtnInstrumentStatus(CThostFtdcInstrumentStatusField *pInstrumentStatus);
+    virtual void OnRspError(CThostFtdcRspInfoField *pRspInfo, int nRequestID, bool bIsLast);
+    virtual void OnHeartBeatWarning(int nTimeLapse);
+    // virtual void OnRspSubMarketData(CThostFtdcSpecificInstrumentField *pSpecificInstrument, CThostFtdcRspInfoField *pRspInfo, int nRequestID, bool bIsLast);
+    // virtual void OnRspUnSubMarketData(CThostFtdcSpecificInstrumentField *pSpecificInstrument, CThostFtdcRspInfoField *pRspInfo, int nRequestID, bool bIsLast);
+    // virtual void OnRtnDepthMarketData(CThostFtdcDepthMarketDataField *pDepthMarketData);
+
+    virtual void OnRspQryInstrument(CThostFtdcInstrumentField *pInstrument, CThostFtdcRspInfoField *pRspInfo, int nRequestID, bool bIsLast);
+    virtual void OnRspSettlementInfoConfirm(CThostFtdcSettlementInfoConfirmField *pSettlementInfoConfirm, CThostFtdcRspInfoField *pRspInfo, int nRequestID, bool bIsLast);
+    virtual void OnRtnOrder(CThostFtdcOrderField *pOrder);
+    virtual void OnRtnOrder(CThostFtdcOrderField *pOrder, CThostFtdcRspInfoField *pRspInfo);
+    virtual void OnRspOrderInsert(CThostFtdcInputOrderField *pInputOrder, CThostFtdcRspInfoField *pRspInfo, int nRequestID, bool bIsLast);
+    virtual void OnRspOrderAction(CThostFtdcOrderActionField *, CThostFtdcRspInfoField *, int, bool);
+    virtual void OnRtnTrade(CThostFtdcTradeField *pTrade);
+    virtual void OnErrRtnOrderInsert(CThostFtdcInputOrderField *pInputOrder, CThostFtdcRspInfoField *pRspInfo);
+    virtual void OnErrRtnOrderAction(CThostFtdcOrderActionField *pOrderAction, CThostFtdcRspInfoField *pRspInfo);
+
+
+private:
+    ::ors::OrsConfig config_;
+    ::ors::OrsTransport& transport_;
+    inline __attribute__((always_inline)) void RemoveFromMap(const char *exchid, int32_t localid);
+    inline __attribute__((always_inline)) bool GetOrderInfo(const char *orderref, OrderInfo &orderinfo);
+
+    void SetCombOffsetFlag(CThostFtdcInputOrderField &req, RequestMsg *request, char &flag, int &orderType);
+    illuminati::ds::CasLock m_ordLocalMapLock;
+    void registerStats();
+    inline __attribute__((always_inline)) void SendNewOrder(RequestMsg *);
+    inline __attribute__((always_inline)) void SendModifyOrder(RequestMsg *);
+    inline __attribute__((always_inline)) void SendCancelOrder(RequestMsg *);
+    void DoLoggOff();
+    void updatePosition(OrderInfo &ordinfo, ResponseMsg *resp);
+
+    void ReqUserLogin();
+    void Authenticate(); // add by pqr 20230213
+    void ReqSettlementInfoConfirm();
+    void ReqQrySettlementInfo();
+    void ReqQryInstrument(char *);
+    void ReqQryPosition();
+    void ReqQryAccount();
+    void installSignals();
+    void HandleSignals();
+    bool IsErrorRspInfo(CThostFtdcRspInfoField *pRspInfo);
+    TThostFtdcFrontIDType FRONT_ID;
+    TThostFtdcSessionIDType SESSION_ID;
+    TThostFtdcOrderRefType ORDER_REF;
+
+    int m_logoffResp;
+    int m_logonResp;
+    illuminati::infra::RmsImpl rms;
+
+    std::map<std::string, contractPos> mapContractPos;
+    std::map<std::string, contractPos>::iterator mapContractPosIter;
+    illuminati::ds::CasLock contractPosLock;
+
+    std::string m_rmsConfigFile;
+    std::string m_rmsFirmwideConfigFile;
+    int m_maxClients{250};
+
+    int m_mdShmKey;
+    int m_mdShmSize;
+
+    // signals
+    sigset_t m_signalSet;
+
+    std::string m_statsFile;
+
+    uint64_t tempTimeStamp;
+};
+
+#endif
