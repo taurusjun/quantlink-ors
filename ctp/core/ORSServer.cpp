@@ -12,10 +12,9 @@
 #include "query/QueryMapping.h"
 
 using namespace std;
-using namespace illuminati::infra;
-using namespace illuminati;
-using namespace illuminati::md;
-using namespace illuminati::stats;
+using namespace ors::infra;
+using namespace ors;
+using namespace ors::md;
 
 #define BUY 'B'
 #define SELL 'S'
@@ -442,7 +441,7 @@ void ORSServer::SendNewOrder(RequestMsg *request)
         req.VolumeTotalOriginal = request->Quantity;
         req.VolumeCondition = THOST_FTDC_VC_CV;
         req.MinVolume = request->Quantity;
-        if ((request->Duration == illuminati::infra::FOK) || (request->Duration == illuminati::infra::IOC))
+        if ((request->Duration == ::ors::infra::FOK) || (request->Duration == ::ors::infra::IOC))
         {
             if ((request->Exchange_Type == CHINA_CFFEX) || (request->Exchange_Type == CHINA_ZCE))
             {
@@ -456,7 +455,7 @@ void ORSServer::SendNewOrder(RequestMsg *request)
             req.VolumeCondition = THOST_FTDC_VC_CV;
             req.MinVolume = request->Quantity;
         }
-        else if (request->Duration == illuminati::infra::FAK)
+        else if (request->Duration == ::ors::infra::FAK)
         {
             if ((request->Exchange_Type == CHINA_CFFEX) || (request->Exchange_Type == CHINA_ZCE))
             {
@@ -487,7 +486,7 @@ void ORSServer::SendNewOrder(RequestMsg *request)
         req.VolumeCondition = THOST_FTDC_VC_CV;
         req.MinVolume = request->Quantity;
 
-        if ((request->Duration == illuminati::infra::FOK) || (request->Duration == illuminati::infra::IOC))
+        if ((request->Duration == ::ors::infra::FOK) || (request->Duration == ::ors::infra::IOC))
         {
             if ((request->Exchange_Type == CHINA_CFFEX) || (request->Exchange_Type == CHINA_ZCE))
             {
@@ -498,7 +497,7 @@ void ORSServer::SendNewOrder(RequestMsg *request)
             req.VolumeCondition = THOST_FTDC_VC_CV;
             req.MinVolume = request->Quantity;
         }
-        else if (request->Duration == illuminati::infra::FAK)
+        else if (request->Duration == ::ors::infra::FAK)
         {
             // if(!strcmp(symbol->second.ExchangeID, "CFFEX") || !strcmp(symbol->second.ExchangeID, "ZCE"))
             if ((request->Exchange_Type == CHINA_CFFEX) || (request->Exchange_Type == CHINA_ZCE))

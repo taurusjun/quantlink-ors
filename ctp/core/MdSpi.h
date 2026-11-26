@@ -1,9 +1,10 @@
 #ifndef _MDSPI_HEADER_
 #define _MDSPI_HEADER_
 
+#include <cstdint>
 
 
-#include "itimer.h"
+
 
 
 #include "ThostFtdcMdApi.h"

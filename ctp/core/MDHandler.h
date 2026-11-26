@@ -14,7 +14,7 @@
 #define MD_SHMKEY 871 // lzd change 871 to 872
 #define MD_SHMSIZE 100000
 
-using namespace illuminati::md;
+using namespace ors::md;
 
 class MDHandler
 {

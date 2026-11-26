@@ -35,8 +35,8 @@ void copyText(char (&destination)[N], std::string_view value) {
 
 }  // namespace
 
-illuminati::infra::RequestMsg decodeRequest(sbe::OrsRequest& decoder) {
-  illuminati::infra::RequestMsg request{};
+::ors::infra::RequestMsg decodeRequest(sbe::OrsRequest& decoder) {
+  ::ors::infra::RequestMsg request{};
   const auto description = decoder.contractDescription();
   copyText(request.Contract_Description.InstrumentName,
            text(description.instrumentName(), 32));
@@ -48,15 +48,15 @@ illuminati::infra::RequestMsg decodeRequest(sbe::OrsRequest& decoder) {
               description.optionType(), 2);
   request.Contract_Description.CALevel = description.caLevel();
   request.Request_Type =
-      static_cast<illuminati::infra::RequestType>(decoder.requestType());
+      static_cast<::ors::infra::RequestType>(decoder.requestType());
   request.OrdType =
-      static_cast<illuminati::infra::OrderType>(decoder.orderType());
+      static_cast<::ors::infra::OrderType>(decoder.orderType());
   request.Duration =
-      static_cast<illuminati::infra::OrderDuration>(decoder.duration());
+      static_cast<::ors::infra::OrderDuration>(decoder.duration());
   request.PxType =
-      static_cast<illuminati::infra::PriceType>(decoder.priceType());
+      static_cast<::ors::infra::PriceType>(decoder.priceType());
   request.PosDirection =
-      static_cast<illuminati::infra::PositionDirection>(decoder.positionDirection());
+      static_cast<::ors::infra::PositionDirection>(decoder.positionDirection());
   request.OrderID = decoder.orderId();
   request.Token = decoder.token();
   request.Quantity = decoder.quantity();
@@ -70,7 +70,7 @@ illuminati::infra::RequestMsg decodeRequest(sbe::OrsRequest& decoder) {
   return request;
 }
 
-std::size_t encodeResponse(const illuminati::infra::ResponseMsg& response,
+std::size_t encodeResponse(const ::ors::infra::ResponseMsg& response,
                            char* destination, std::size_t capacity) {
   sbe::OrsResponse encoder;
   encoder.wrapAndApplyHeader(destination, 0, capacity)
@@ -89,7 +89,7 @@ std::size_t encodeResponse(const illuminati::infra::ResponseMsg& response,
   return encoder.encodedLength() + sbe::MessageHeader::encodedLength();
 }
 
-std::size_t encodeMarketUpdate(const illuminati::md::MarketUpdateNew& update,
+std::size_t encodeMarketUpdate(const ::ors::md::MarketUpdateNew& update,
                                char* destination, std::size_t capacity) {
   sbe::MarketUpdate encoder;
   encoder.wrapAndApplyHeader(destination, 0, capacity)

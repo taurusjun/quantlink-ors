@@ -16,11 +16,11 @@
 
 namespace ors {
 
-illuminati::infra::RequestMsg decodeRequest(
+::ors::infra::RequestMsg decodeRequest(
     com::quantlink::contract::sbe::OrsRequest& decoder);
-std::size_t encodeResponse(const illuminati::infra::ResponseMsg& response,
+std::size_t encodeResponse(const ::ors::infra::ResponseMsg& response,
                            char* destination, std::size_t capacity);
-std::size_t encodeMarketUpdate(const illuminati::md::MarketUpdateNew& update,
+std::size_t encodeMarketUpdate(const ::ors::md::MarketUpdateNew& update,
                                char* destination, std::size_t capacity);
 AccountQueryRequest decodeAccountQuery(
     com::quantlink::contract::sbe::AccountQuery& decoder);

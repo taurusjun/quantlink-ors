@@ -19,8 +19,8 @@ int main() {
   registration.accountId = "142266";
   server.RegisterClient(registration);
 
-  illuminati::infra::RequestMsg cancel{};
-  cancel.Request_Type = illuminati::infra::CANCELORDER;
+  ::ors::infra::RequestMsg cancel{};
+  cancel.Request_Type = ::ors::infra::CANCELORDER;
   cancel.OrderID = 999;
   std::strcpy(cancel.AccountID, "142266");
   std::strcpy(cancel.Contract_Description.Symbol, "au2612");
@@ -31,7 +31,7 @@ int main() {
     return 1;
   }
   const auto responses = transport.responses();
-  if (responses.front().Response_Type != illuminati::infra::CANCEL_ORDER_REJECT ||
+  if (responses.front().Response_Type != ::ors::infra::CANCEL_ORDER_REJECT ||
       responses.front().OrderID != 999) {
     std::cerr << "unknown cancel did not return CANCEL_ORDER_REJECT\n";
     return 1;
@@ -39,7 +39,7 @@ int main() {
 
   OrderInfo order{};
   order.localID = 42;
-  order.requestType = illuminati::infra::CANCELORDER;
+  order.requestType = ::ors::infra::CANCELORDER;
   order.Transaction_Type = 'B';
   order.Qty = 1;
   order.Price = 725.0;
@@ -59,7 +59,7 @@ int main() {
 
   if (transport.responseCount() != 2 ||
       transport.responses()[1].Response_Type !=
-          illuminati::infra::CANCEL_ORDER_REJECT ||
+          ::ors::infra::CANCEL_ORDER_REJECT ||
       server.m_ordLocalMap.count(42) != 1) {
     std::cerr << "cancel reject did not keep the original order\n";
     return 1;
@@ -87,13 +87,13 @@ int main() {
   server.OnRtnTrade(&trade);
   if (transport.responseCount() != beforeTrade + 1 ||
       transport.responses().back().Response_Type !=
-          illuminati::infra::TRADE_CONFIRM) {
+          ::ors::infra::TRADE_CONFIRM) {
     std::cerr << "trade confirm was not emitted\n";
     return 1;
   }
 
-  illuminati::infra::RequestMsg preRms{};
-  preRms.Request_Type = illuminati::infra::NEWORDER;
+  ::ors::infra::RequestMsg preRms{};
+  preRms.Request_Type = ::ors::infra::NEWORDER;
   preRms.OrderID = 1001;
   preRms.Quantity = 1;
   preRms.Price = 725.0;
@@ -102,7 +102,7 @@ int main() {
   const std::size_t beforePreRms = transport.responseCount();
   server.ProcessRequest(&preRms);
   if (transport.responseCount() != beforePreRms + 1 ||
-      transport.responses().back().Response_Type != illuminati::infra::ORS_REJECT) {
+      transport.responses().back().Response_Type != ::ors::infra::ORS_REJECT) {
     std::cerr << "order before RMS ready was not rejected\n";
     return 1;
   }

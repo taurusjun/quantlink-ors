@@ -14,13 +14,12 @@ if(NOT SPDLOG_INCLUDE_DIR)
   message(FATAL_ERROR "SPDLOG_INCLUDE_DIR is required (spdlog/spdlog.h)")
 endif()
 
-set(HFTBASE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/vendor/hftbase")
+set(RMS_VENDOR_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/vendor/rms")
 set(ORS_INCLUDE_DIRS
     "${CMAKE_CURRENT_SOURCE_DIR}"
-    "${CMAKE_CURRENT_SOURCE_DIR}/vendor/override"
-    "${HFTBASE_ROOT}/CommonUtils/include"
-    "${HFTBASE_ROOT}/RMS_NEW/include"
-    "${HFTBASE_ROOT}/LibSecurity/include"
+    "${RMS_VENDOR_ROOT}/common"
+    "${RMS_VENDOR_ROOT}/core"
+    "${RMS_VENDOR_ROOT}/security"
     "${CTP_INCLUDE_DIR}"
     "${SPDLOG_INCLUDE_DIR}")
 
@@ -56,8 +55,8 @@ add_library(ors_core STATIC
     control/OpenOrderGuard.cpp
     log/Log.cpp
     transport/InMemoryOrsTransport.cpp
-    vendor/hftbase/tinyxml2.cpp
-    vendor/hftbase/rmschecks.cpp)
+    vendor/rms/tinyxml2.cpp
+    vendor/rms/rmschecks.cpp)
 target_include_directories(ors_core PUBLIC ${ORS_INCLUDE_DIRS})
 target_link_libraries(ors_core PUBLIC ors_base CTP::trader CTP::md Threads::Threads)
 target_compile_features(ors_core PUBLIC cxx_std_20)

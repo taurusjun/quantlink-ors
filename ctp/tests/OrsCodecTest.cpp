@@ -43,7 +43,7 @@ int main() {
   requestHeader.wrap(buffer, 0, 0, sizeof(buffer));
   OrsRequest requestDecoder;
   requestDecoder.wrapForDecode(buffer, MessageHeader::encodedLength(), requestHeader.blockLength(), requestHeader.version(), sizeof(buffer));
-  const auto decodedRequest = ors::decodeRequest(requestDecoder);
+  const auto decodedRequest = ::ors::decodeRequest(requestDecoder);
   if (decodedRequest.OrderID != 42 || decodedRequest.Quantity != 2 ||
       decodedRequest.Price != 735.5 ||
       std::string(decodedRequest.Contract_Description.Symbol) != "au2612") {
@@ -51,8 +51,8 @@ int main() {
     return 1;
   }
 
-  illuminati::infra::ResponseMsg response;
-  response.Response_Type = illuminati::infra::CANCEL_ORDER_REJECT;
+  ::ors::infra::ResponseMsg response;
+  response.Response_Type = ::ors::infra::CANCEL_ORDER_REJECT;
   response.OrderID = 42;
   response.ErrorCode = 26;
   response.Quantity = 1;
@@ -63,7 +63,7 @@ int main() {
   response.ExchangeOrderId = 1.25;
 
   const std::size_t responseLength =
-      ors::encodeResponse(response, buffer, sizeof(buffer));
+      ::ors::encodeResponse(response, buffer, sizeof(buffer));
   MessageHeader responseHeader;
   responseHeader.wrap(buffer, 0, 0, sizeof(buffer));
   OrsResponse responseDecoder;
@@ -84,13 +84,13 @@ int main() {
   queryHeader.wrap(buffer, 0, 0, sizeof(buffer));
   AccountQuery queryDecoder;
   queryDecoder.wrapForDecode(buffer, MessageHeader::encodedLength(), queryHeader.blockLength(), queryHeader.version(), sizeof(buffer));
-  const auto decodedQuery = ors::decodeAccountQuery(queryDecoder);
+  const auto decodedQuery = ::ors::decodeAccountQuery(queryDecoder);
   if (decodedQuery.requestId != 9 || decodedQuery.accountId != "142266") {
     std::cerr << "account query mapping failed\n";
     return 1;
   }
 
-  ors::AccountSnapshot snapshot;
+  ::ors::AccountSnapshot snapshot;
   snapshot.requestId = 9;
   snapshot.accountId = "142266";
   snapshot.tradingDay = "20261126";
@@ -99,7 +99,7 @@ int main() {
   snapshot.errorCode = 0;
   snapshot.timestamp = 123;
   const std::size_t snapshotLength =
-      ors::encodeAccountSnapshot(snapshot, buffer, sizeof(buffer));
+      ::ors::encodeAccountSnapshot(snapshot, buffer, sizeof(buffer));
   MessageHeader snapshotHeader;
   snapshotHeader.wrap(buffer, 0, 0, sizeof(buffer));
   AccountSnapshot snapshotDecoder;
@@ -110,12 +110,12 @@ int main() {
     return 1;
   }
 
-  ors::ClientRegisterResult result;
+  ::ors::ClientRegisterResult result;
   result.requestId = 10;
   result.clientId = 1;
   result.timestamp = 123;
   const std::size_t registerLength =
-      ors::encodeClientRegisterResponse(result, buffer, sizeof(buffer));
+      ::ors::encodeClientRegisterResponse(result, buffer, sizeof(buffer));
   MessageHeader registerHeader;
   registerHeader.wrap(buffer, 0, 0, sizeof(buffer));
   ClientRegisterResponse registerDecoder;

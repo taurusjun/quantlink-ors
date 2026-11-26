@@ -11,7 +11,7 @@ namespace ors {
 class OrsTransport {
  public:
   using RequestHandler =
-      std::function<void(illuminati::infra::RequestMsg*)>;
+      std::function<void(::ors::infra::RequestMsg*)>;
   using AccountQueryHandler =
       std::function<void(const AccountQueryRequest&)>;
   using ClientRegisterHandler =
@@ -22,8 +22,8 @@ class OrsTransport {
   virtual bool start(RequestHandler requestHandler,
                      AccountQueryHandler accountQueryHandler,
                      ClientRegisterHandler clientRegisterHandler) = 0;
-  virtual bool sendResponse(const illuminati::infra::ResponseMsg& response) = 0;
-  virtual bool sendMarketData(const illuminati::md::MarketUpdateNew& update) = 0;
+  virtual bool sendResponse(const ::ors::infra::ResponseMsg& response) = 0;
+  virtual bool sendMarketData(const ::ors::md::MarketUpdateNew& update) = 0;
   virtual bool sendSession(const SessionEvent& event) = 0;
   virtual bool sendAccount(const AccountSnapshot& snapshot) = 0;
   virtual bool sendClientRegisterResponse(const ClientRegisterResult& result) = 0;

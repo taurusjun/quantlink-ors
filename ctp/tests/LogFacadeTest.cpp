@@ -10,9 +10,9 @@ int main() {
   const std::string path = "/tmp/ors_log_facade_test.jsonl";
   std::remove(path.c_str());
 
-  auto logger = ors::base::createLogger("ors-test", path);
-  ors::log::init(logger);
-  ors::log::info("order.rtn", {{"order_id", 42},
+  auto logger = ::ors::base::createLogger("ors-test", path);
+  ::ors::log::init(logger);
+  ::ors::log::info("order.rtn", {{"order_id", 42},
                                {"symbol", "au2612"},
                                {"password", "must-not-appear"}});
   logger->flush();

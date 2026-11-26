@@ -19,9 +19,9 @@ class AeronOrsTransport final : public OrsTransport, public MarketDataSink {
   bool start(RequestHandler requestHandler,
              AccountQueryHandler accountQueryHandler,
              ClientRegisterHandler clientRegisterHandler) override;
-  bool sendResponse(const illuminati::infra::ResponseMsg& response) override;
-  bool sendMarketData(const illuminati::md::MarketUpdateNew& update) override;
-  bool send(const illuminati::md::MarketUpdateNew& update) override {
+  bool sendResponse(const ::ors::infra::ResponseMsg& response) override;
+  bool sendMarketData(const ::ors::md::MarketUpdateNew& update) override;
+  bool send(const ::ors::md::MarketUpdateNew& update) override {
     return sendMarketData(update);
   }
   bool sendSession(const SessionEvent& event) override;

@@ -15,17 +15,17 @@ void check(bool condition, const char* what) {
   }
 }
 
-struct Sink final : ors::MarketDataSink {
-  std::vector<illuminati::md::MarketUpdateNew> updates;
+struct Sink final : ::ors::MarketDataSink {
+  std::vector<::ors::md::MarketUpdateNew> updates;
   bool accept{true};
-  bool send(const illuminati::md::MarketUpdateNew& update) override {
+  bool send(const ::ors::md::MarketUpdateNew& update) override {
     updates.push_back(update);
     return accept;
   }
 };
 
-illuminati::md::MarketUpdateNew sample() {
-  illuminati::md::MarketUpdateNew update{};
+::ors::md::MarketUpdateNew sample() {
+  ::ors::md::MarketUpdateNew update{};
   std::strcpy(update.m_symbol, "au2612");
   update.m_exchTS = 100;
   update.m_validBids = 20;

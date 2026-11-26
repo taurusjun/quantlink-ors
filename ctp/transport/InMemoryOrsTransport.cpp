@@ -14,13 +14,13 @@ bool InMemoryOrsTransport::start(RequestHandler requestHandler,
 }
 
 bool InMemoryOrsTransport::sendResponse(
-    const illuminati::infra::ResponseMsg& response) {
+    const ::ors::infra::ResponseMsg& response) {
   responses_.push_back(response);
   return true;
 }
 
 bool InMemoryOrsTransport::sendMarketData(
-    const illuminati::md::MarketUpdateNew& update) {
+    const ::ors::md::MarketUpdateNew& update) {
   marketData_.push_back(update);
   return true;
 }

@@ -18,9 +18,9 @@ int main() {
   row.TradingDay[6] = '2';
   row.TradingDay[7] = '6';
 
-  ors::OrsConfig config;
+  ::ors::OrsConfig config;
   config.accountId = "142266";
-  const auto snapshot = ors::mapAccountSnapshot(row, 7, config);
+  const auto snapshot = ::ors::mapAccountSnapshot(row, 7, config);
   if (snapshot.requestId != 7 || snapshot.accountId != "142266" ||
       snapshot.balance != 1000.0 || snapshot.available != 0.0 ||
       snapshot.margin != 10.0) {

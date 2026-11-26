@@ -10,13 +10,13 @@
 #include <unordered_map>
 #include <thread>
 #include <map>
+#include <cstdint>
 #include <vector>
 
 #include <mutex>
 #include "MDHandler.h"
 #include "orderresponse.h"
 #include "marketupdateNew.h"
-#include "itimer.h"
 #include <signal.h>
 #include "errorcodes.h"
 
@@ -30,9 +30,9 @@
 #include "transport/OrsTransport.h"
 
 using namespace std;
-using namespace illuminati::infra;
-using namespace illuminati;
-using namespace illuminati::md;
+using namespace ors::infra;
+using namespace ors;
+using namespace ors::md;
 
 typedef struct _masterData
 {
@@ -110,7 +110,7 @@ public:
     void RmsError(ResponseType, uint32_t, uint32_t);
     void RmsWarning(ResponseType, uint32_t, uint32_t);
 
-    illuminati::infra::RmsImpl &getRms()
+    ::ors::infra::RmsImpl &getRms()
     {
         return rms;
     }
@@ -198,7 +198,7 @@ private:
 
     int m_logoffResp;
     int m_logonResp;
-    illuminati::infra::RmsImpl rms;
+    ::ors::infra::RmsImpl rms;
 
     ::ors::PositionTable positionTable_;
     ::ors::ClientRegistry clientRegistry_;

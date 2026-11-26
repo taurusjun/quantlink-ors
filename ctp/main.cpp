@@ -34,7 +34,7 @@ int main(int argc, char** argv) {
     g_pUpdate = &marketUpdate;
 
     transport.start(
-        [&server](illuminati::infra::RequestMsg* request) {
+        [&server](::ors::infra::RequestMsg* request) {
           server.ProcessRequest(request);
         },
         [&server](const ::ors::AccountQueryRequest& request) {

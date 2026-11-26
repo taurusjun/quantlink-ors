@@ -30,14 +30,14 @@ bool AeronOrsTransport::start(RequestHandler requestHandler,
 }
 
 bool AeronOrsTransport::sendResponse(
-    const illuminati::infra::ResponseMsg& response) {
+    const ::ors::infra::ResponseMsg& response) {
   const std::size_t length =
       encodeResponse(response, buffer_.data(), buffer_.size());
   return publish(config_.responseStream, length);
 }
 
 bool AeronOrsTransport::sendMarketData(
-    const illuminati::md::MarketUpdateNew& update) {
+    const ::ors::md::MarketUpdateNew& update) {
   const std::size_t length =
       encodeMarketUpdate(update, buffer_.data(), buffer_.size());
   return publish(config_.marketDataStream, length);

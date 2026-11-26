@@ -7,7 +7,7 @@ namespace ors {
 class MarketDataSink {
  public:
   virtual ~MarketDataSink() = default;
-  virtual bool send(const illuminati::md::MarketUpdateNew& update) = 0;
+  virtual bool send(const ::ors::md::MarketUpdateNew& update) = 0;
 };
 
 }  // namespace ors

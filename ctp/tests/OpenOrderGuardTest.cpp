@@ -11,11 +11,11 @@ int main() {
   CThostFtdcOrderField live{};
   live.OrderStatus = THOST_FTDC_OST_NoTradeQueueing;
 
-  if (ors::hasLiveOrders({terminal, canceled})) {
+  if (::ors::hasLiveOrders({terminal, canceled})) {
     std::cerr << "terminal rows treated as live\n";
     return 1;
   }
-  if (!ors::hasLiveOrders({terminal, live})) {
+  if (!::ors::hasLiveOrders({terminal, live})) {
     std::cerr << "live row missed\n";
     return 1;
   }

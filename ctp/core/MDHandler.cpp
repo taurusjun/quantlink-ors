@@ -9,7 +9,7 @@
 #include "log/Metrics.h"
 
 using namespace std;
-using namespace illuminati;
+using namespace ors;
 
 int OB_CHECK = 0;
 int OB_SHMWRITE = 0;

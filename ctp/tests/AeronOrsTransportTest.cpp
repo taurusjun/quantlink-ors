@@ -20,7 +20,7 @@ void check(bool condition, const char* what) {
   }
 }
 
-struct FakePublisher final : ors::FramePublisher {
+struct FakePublisher final : ::ors::FramePublisher {
   std::vector<std::pair<int, std::vector<char>>> frames;
   bool accept{true};
   bool publish(int streamId, const char* data, std::size_t length) override {
@@ -30,7 +30,7 @@ struct FakePublisher final : ors::FramePublisher {
   }
 };
 
-struct FakeSubscriber final : ors::FrameSubscriber {
+struct FakeSubscriber final : ::ors::FrameSubscriber {
   std::vector<std::pair<int, std::vector<char>>> frames;
   int poll(int, const Handler& handler) override {
     for (const auto& frame : frames) {
@@ -40,8 +40,8 @@ struct FakeSubscriber final : ors::FrameSubscriber {
   }
 };
 
-ors::OrsConfig config() {
-  ors::OrsConfig config;
+::ors::OrsConfig config() {
+  ::ors::OrsConfig config;
   config.requestStream = 1;
   config.responseStream = 2;
   config.accountStream = 3;
@@ -54,9 +54,9 @@ ors::OrsConfig config() {
 void responseUsesResponseStream() {
   FakePublisher publisher;
   FakeSubscriber subscriber;
-  ors::AeronOrsTransport transport(config(), publisher, subscriber);
-  illuminati::infra::ResponseMsg response;
-  response.Response_Type = illuminati::infra::NEW_ORDER_CONFIRM;
+  ::ors::AeronOrsTransport transport(config(), publisher, subscriber);
+  ::ors::infra::ResponseMsg response;
+  response.Response_Type = ::ors::infra::NEW_ORDER_CONFIRM;
   response.OrderID = 7;
   check(transport.sendResponse(response), "response publish");
   check(publisher.frames.size() == 1 && publisher.frames[0].first == 2,
@@ -66,8 +66,8 @@ void responseUsesResponseStream() {
 void accountUsesAccountStream() {
   FakePublisher publisher;
   FakeSubscriber subscriber;
-  ors::AeronOrsTransport transport(config(), publisher, subscriber);
-  ors::AccountSnapshot snapshot;
+  ::ors::AeronOrsTransport transport(config(), publisher, subscriber);
+  ::ors::AccountSnapshot snapshot;
   snapshot.requestId = 9;
   check(transport.sendAccount(snapshot), "account publish");
   check(publisher.frames.size() == 1 && publisher.frames[0].first == 3,
@@ -103,16 +103,16 @@ void requestRoutesToHandler() {
       1, std::vector<char>(buffer, buffer + message.encodedLength() +
                                         com::quantlink::contract::sbe::MessageHeader::encodedLength()));
 
-  ors::AeronOrsTransport transport(config(), publisher, subscriber);
-  illuminati::infra::RequestMsg received{};
+  ::ors::AeronOrsTransport transport(config(), publisher, subscriber);
+  ::ors::infra::RequestMsg received{};
   bool called = false;
   transport.start(
-      [&](illuminati::infra::RequestMsg* request) {
+      [&](::ors::infra::RequestMsg* request) {
         called = true;
         received = *request;
       },
-      [](const ors::AccountQueryRequest&) {},
-      [](const ors::ClientRegisterRequest&) {});
+      [](const ::ors::AccountQueryRequest&) {},
+      [](const ::ors::ClientRegisterRequest&) {});
   transport.poll(10);
   check(called && received.OrderID == 77, "request routed");
 }
@@ -130,13 +130,13 @@ void accountQueryRoutesToHandler() {
       1, std::vector<char>(buffer, buffer + message.encodedLength() +
                                         com::quantlink::contract::sbe::MessageHeader::encodedLength()));
 
-  ors::AeronOrsTransport transport(config(), publisher, subscriber);
+  ::ors::AeronOrsTransport transport(config(), publisher, subscriber);
   std::uint64_t received = 0;
-  transport.start([](illuminati::infra::RequestMsg*) {},
-                  [&](const ors::AccountQueryRequest& query) {
+  transport.start([](::ors::infra::RequestMsg*) {},
+                  [&](const ::ors::AccountQueryRequest& query) {
                     received = query.requestId;
                   },
-                  [](const ors::ClientRegisterRequest&) {});
+                  [](const ::ors::ClientRegisterRequest&) {});
   transport.poll(10);
   check(received == 9, "account query routed");
 }
@@ -145,8 +145,8 @@ void backPressureIsReported() {
   FakePublisher publisher;
   publisher.accept = false;
   FakeSubscriber subscriber;
-  ors::AeronOrsTransport transport(config(), publisher, subscriber);
-  illuminati::infra::ResponseMsg response;
+  ::ors::AeronOrsTransport transport(config(), publisher, subscriber);
+  ::ors::infra::ResponseMsg response;
   check(!transport.sendResponse(response), "back pressure reported");
 }
 

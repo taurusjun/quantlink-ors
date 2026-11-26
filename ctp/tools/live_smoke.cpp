@@ -93,7 +93,7 @@ int main(int argc, char** argv) {
   }
 
   try {
-    const ors::OrsConfig cfg = ors::OrsConfig::load(argv[1]);
+    const ::ors::OrsConfig cfg = ::ors::OrsConfig::load(argv[1]);
     Client client;
     aeron::Context context;
     context.aeronDir(cfg.aeronDir);

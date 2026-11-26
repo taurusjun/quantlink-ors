@@ -19,7 +19,7 @@ using std::chrono::milliseconds;
 using std::chrono::seconds;
 
 void rejectsSecondQueryInsideInterval() {
-  ors::AccountQueryState state;
+  ::ors::AccountQueryState state;
   const auto now = Clock::now();
   check(state.tryBegin(1, now, seconds(5)), "first query accepted");
   check(!state.tryBegin(2, now + milliseconds(100), seconds(5)),
@@ -27,7 +27,7 @@ void rejectsSecondQueryInsideInterval() {
 }
 
 void mapsCtpRequestIdBackToSdkRequestId() {
-  ors::AccountQueryState state;
+  ::ors::AccountQueryState state;
   check(state.tryBegin(9, Clock::now(), seconds(5)), "query accepted");
   state.bindCtpRequest(77);
   check(state.requestIdFor(77) == 9, "request id maps back");
@@ -35,7 +35,7 @@ void mapsCtpRequestIdBackToSdkRequestId() {
 }
 
 void expireReturnsRequestIdAndClearsPending() {
-  ors::AccountQueryState state;
+  ::ors::AccountQueryState state;
   const auto now = Clock::now();
   check(state.tryBegin(11, now, milliseconds(100)), "query accepted");
   check(!state.expire(now + milliseconds(50)).has_value(),
@@ -46,7 +46,7 @@ void expireReturnsRequestIdAndClearsPending() {
 }
 
 void lateResponseAfterExpireIsIgnored() {
-  ors::AccountQueryState state;
+  ::ors::AccountQueryState state;
   const auto now = Clock::now();
   state.tryBegin(12, now, milliseconds(100));
   state.bindCtpRequest(88);
@@ -55,7 +55,7 @@ void lateResponseAfterExpireIsIgnored() {
 }
 
 void finishAllowsNextQuery() {
-  ors::AccountQueryState state;
+  ::ors::AccountQueryState state;
   const auto now = Clock::now();
   state.tryBegin(13, now, seconds(5));
   state.finish();
