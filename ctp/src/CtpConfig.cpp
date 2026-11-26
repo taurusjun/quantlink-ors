@@ -4,7 +4,7 @@
 #include <stdexcept>
 #include <string>
 
-#include "ors/ctp/ConfigFile.h"
+#include "ors/base/ConfigFile.h"
 
 namespace ors::ctp {
 namespace {
@@ -26,7 +26,7 @@ CtpConfig::Env CtpConfig::processEnv() {
 }
 
 CtpConfig CtpConfig::load(const std::string& path, const Env& env) {
-  const ConfigFile file = ConfigFile::load(path, "ctp config");
+  const base::ConfigFile file = base::ConfigFile::load(path, "ctp config");
 
   // Environment wins for the credential keys; an empty variable is treated as
   // unset so an exported-but-blank value cannot silently wipe the file.

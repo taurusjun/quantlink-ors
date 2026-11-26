@@ -4,8 +4,8 @@
 #include <stdexcept>
 #include <string>
 
-#include "ors/ctp/ConfigFile.h"
-#include "ors/ctp/StringList.h"
+#include "ors/base/ConfigFile.h"
+#include "ors/base/StringList.h"
 
 namespace ors::ctp {
 namespace {
@@ -14,7 +14,7 @@ constexpr int kOrderStreamOffset = 2;
 constexpr int kCancelStreamOffset = 3;
 constexpr int kMaxStreamOffset = 7;
 
-std::uint64_t requireUnsigned(const ConfigFile& file, const std::string& key) {
+std::uint64_t requireUnsigned(const base::ConfigFile& file, const std::string& key) {
   const std::string text = file.require(key);
   if (!text.empty() && text.front() == '-') {
     throw std::runtime_error("ors runtime config: " + key + " must be an unsigned integer");
@@ -32,7 +32,7 @@ std::uint64_t requireUnsigned(const ConfigFile& file, const std::string& key) {
   return static_cast<std::uint64_t>(value);
 }
 
-int requirePositiveInt(const ConfigFile& file, const std::string& key) {
+int requirePositiveInt(const base::ConfigFile& file, const std::string& key) {
   const std::string text = file.require(key);
   std::size_t used = 0;
   int value = 0;
@@ -50,7 +50,7 @@ int requirePositiveInt(const ConfigFile& file, const std::string& key) {
 }  // namespace
 
 ContractRuntimeConfig ContractRuntimeConfig::load(const std::string& path) {
-  const ConfigFile file = ConfigFile::load(path, "ors runtime config");
+  const base::ConfigFile file = base::ConfigFile::load(path, "ors runtime config");
 
   ContractRuntimeConfig config;
   config.aeronDir = file.require("AERON_DIR");
@@ -58,7 +58,7 @@ ContractRuntimeConfig ContractRuntimeConfig::load(const std::string& path) {
   config.orsId = file.require("ORS_ID");
   config.environment = file.require("ENVIRONMENT");
   config.exchange = file.require("EXCHANGE");
-  config.instruments = splitList(file.require("INSTRUMENTS"));
+  config.instruments = base::splitList(file.require("INSTRUMENTS"));
   if (config.instruments.empty()) {
     throw std::runtime_error("ors runtime config: INSTRUMENTS is required");
   }

@@ -55,10 +55,13 @@ spdlog async 只把 I/O 放到后台线程；
 
 ## 3. 日志格式
 
-使用 logfmt（`key=value`），字符串值做最小转义：
+使用 **JSON Lines**：一行一个 JSON 对象。参考公司 ORS 的字段集合，但不复制 `|`
+拼接格式。
 
-```text
-ts=2026-11-26T11:02:49.123456+08:00 level=info event=order.rtn venue=SIMNOW ors=ors-ctp-1 account=142266 order_ref=42 request_id=req-42 ctp_ref=000000000042 front=3 session=400 sys_id=424017 status=ACK cancel=NONE filled=0 remaining=1 price=735
+示例：
+
+```json
+{"ts":"2026-11-26T11:02:49.123456+08:00","level":"INFO","event":"order.rtn","venue_id":"SIMNOW","ors_id":"ors-ctp-1","account_id":"142266","source_session_id":1795661704854903190,"source_publication_epoch":1,"stream_id":9004,"sequence":6,"order_ref":42,"request_id":"req-42","ctp_ref":"000000000042","front_id":3,"session_id":400,"order_sys_id":"424017","instrument_id":"au2612","exchange":"SHFE","side":"BUY","offset_flag":"OPEN","order_type":"LIMIT","time_in_force":"DAY","price":735.0,"qty":1,"filled_qty":1,"remaining_qty":0,"avg_price":735.0,"status":"FILLED","cancel_state":"NONE","error_code":0,"action":"published","latency_us":312}
 ```
 
 字段：
@@ -76,7 +79,29 @@ latency_us
 action, drop_reason, reason
 ```
 
-`reason` / `error` 必须脱敏，不包含密码、AppID、AuthCode。
+规则：
+
+```text
+数字字段保持 JSON number，不转成字符串
+reason/error 必须转义，不含换行控制字符
+reason/error 先脱敏再截断
+缺失字段不输出，不写 null
+每行必须是合法 JSON，不能用原始 | 分隔
+```
+
+公司 ORS 字段映射：
+
+```text
+ClientID       -> account_id
+Symbol         -> instrument_id
+localID        -> order_ref
+exchID/OrderRef-> ctp_ref
+OrderSysID     -> order_sys_id
+TradeID        -> trade_id
+Response_Type  -> event/status/action
+Price/Quantity -> price/qty
+openQty        -> remaining_qty
+```
 
 ---
 

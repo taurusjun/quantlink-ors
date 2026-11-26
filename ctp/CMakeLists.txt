@@ -9,6 +9,26 @@ target_include_directories(ors_contract PUBLIC include "${CONTRACT_GENERATED_DIR
 target_compile_features(ors_contract PUBLIC cxx_std_20)
 
 find_package(Threads REQUIRED)
+find_path(SPDLOG_INCLUDE_DIR NAMES spdlog/spdlog.h
+    HINTS /root/quantlink-trading/tbadmin/inc)
+if(NOT SPDLOG_INCLUDE_DIR)
+  message(FATAL_ERROR "SPDLOG_INCLUDE_DIR is required (spdlog/spdlog.h)")
+endif()
+
+add_library(ors_base STATIC
+    src/base/ConfigFile.cpp
+    src/base/StringList.cpp
+    src/base/Log.cpp
+    ../third_party/inih/ini.c)
+target_include_directories(ors_base PUBLIC include ../third_party/inih "${SPDLOG_INCLUDE_DIR}")
+target_link_libraries(ors_base PUBLIC Threads::Threads)
+target_compile_features(ors_base PUBLIC cxx_std_20)
+target_compile_definitions(ors_base PRIVATE
+    INI_ALLOW_INLINE_COMMENTS=0
+    INI_ALLOW_MULTILINE=0
+    INI_ALLOW_NO_VALUE=0
+    INI_MAX_LINE=4096)
+
 set(AERON_HOME "" CACHE PATH "Aeron source headers; must be supplied")
 set(AERON_RUNTIME_HOME "" CACHE PATH "Aeron runtime lib directory; must be supplied")
 if(NOT AERON_HOME AND DEFINED ENV{AERON_HOME})
@@ -34,9 +54,9 @@ target_link_libraries(ors_aeron PUBLIC ors_contract ors_ctp_core "${AERON_LIB}"
 target_compile_features(ors_aeron PUBLIC cxx_std_20)
 
 # CtpConfig has no SDK dependency, so its unit test runs without the CTP .so.
-add_library(ors_ctp_config STATIC src/CtpConfig.cpp src/ConfigFile.cpp
-                                     src/StringList.cpp src/RuntimeConfig.cpp)
+add_library(ors_ctp_config STATIC src/CtpConfig.cpp src/RuntimeConfig.cpp)
 target_include_directories(ors_ctp_config PUBLIC include)
+target_link_libraries(ors_ctp_config PUBLIC ors_base)
 
 add_library(ors_ctp_core STATIC src/CtpTraderSession.cpp src/CtpMdSession.cpp
                                 src/CtpQueryService.cpp src/CtpOrderRefMap.cpp
@@ -64,6 +84,18 @@ add_test(NAME ctp_text_encoding COMMAND ctp_text_encoding_test)
 add_executable(ctp_config_test tests/CtpConfigTest.cpp)
 target_link_libraries(ctp_config_test PRIVATE ors_ctp_config)
 add_test(NAME ctp_config COMMAND ctp_config_test)
+
+add_executable(ctp_base_config_test tests/BaseConfigTest.cpp)
+target_link_libraries(ctp_base_config_test PRIVATE ors_base)
+add_test(NAME ctp_base_config COMMAND ctp_base_config_test)
+
+add_executable(ctp_base_string_list_test tests/BaseStringListTest.cpp)
+target_link_libraries(ctp_base_string_list_test PRIVATE ors_base)
+add_test(NAME ctp_base_string_list COMMAND ctp_base_string_list_test)
+
+add_executable(ctp_base_log_test tests/BaseLogTest.cpp)
+target_link_libraries(ctp_base_log_test PRIVATE ors_base)
+add_test(NAME ctp_base_log COMMAND ctp_base_log_test)
 
 add_executable(ctp_runtime_config_test tests/RuntimeConfigTest.cpp)
 target_link_libraries(ctp_runtime_config_test PRIVATE ors_ctp_config)

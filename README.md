@@ -33,6 +33,7 @@ cmake -S . -B build \
   -DCTP_HOME=/root/quantlink-trading/ors/third_party/ctp/linux \
   -DAERON_HOME=/opt/quantlink-fin/aeron-src \
   -DAERON_RUNTIME_HOME=/opt/quantlink-fin/aeron-runtime \
+  -DSPDLOG_INCLUDE_DIR=/root/quantlink-trading/tbadmin/inc \
   -DCONTRACT_GENERATED_DIR="$PWD/build/generated/contract"
 cmake --build build -j
 ctest --test-dir build --output-on-failure

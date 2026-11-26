@@ -66,7 +66,7 @@ account/position 查询保留，发布快照，不 gate READY
   - ConfigFile：整行 `#`/`;` 注释；值中的 `#` 保留；section 拒绝；缺 key 报错不含值；坏行带行号。
   - StringList：逗号/空格拆分。
   - Metrics：计数器递增、汇总输出字段。
-  - Log：结构化字段、凭据脱敏、UTF-8 安全截断。
+  - Log：输出合法 JSONL；字符串引号/换行转义；数字保持 number；凭据字段脱敏；UTF-8 安全截断。
 
 - [ ] **Step 2: Run RED**
   - `ctest -R "ctp_config_file|ctp_log|ctp_metrics|ctp_string_list"` 失败。

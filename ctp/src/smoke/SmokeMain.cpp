@@ -20,7 +20,7 @@
 #include "ors/ctp/CtpQueryService.h"
 #include "ors/ctp/CtpSession.h"
 #include "ors/ctp/SmokeLifecycle.h"
-#include "ors/ctp/StringList.h"
+#include "ors/base/StringList.h"
 
 namespace {
 
@@ -38,7 +38,7 @@ using ors::ctp::OrderType;
 using ors::ctp::OrderUpdate;
 using ors::ctp::Side;
 using ors::ctp::SmokeLifecycleVenue;
-using ors::ctp::splitList;
+using ors::base::splitList;
 using ors::ctp::TimeInForce;
 using ors::ctp::runSmokeLifecycle;
 using ors::ctp::Trade;

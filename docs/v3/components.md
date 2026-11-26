@@ -125,9 +125,14 @@ pin 版本，不依赖系统包。后续如果确实需要 section，再单独�
 
 ## 4. Log
 
-基于 spdlog async logger 的封装：
+基于 spdlog async logger 的封装，输出 JSON Lines：
 
 ```cpp
+struct LogField {
+  std::string_view key;
+  std::variant<std::string, std::int64_t, std::uint64_t, double, bool> value;
+};
+
 void logEvent(spdlog::logger& logger,
               spdlog::level::level_enum level,
               std::string_view event,
@@ -139,6 +144,9 @@ void logEvent(spdlog::logger& logger,
 ```text
 spdlog async + rotating file
 queue 8192，overrun_oldest
+一行一个合法 JSON
+数字字段保持 number
+字符串做 JSON 转义
 不打印凭据
 订单/撤单/成交/错误走结构化事件
 行情每 tick 只计数
