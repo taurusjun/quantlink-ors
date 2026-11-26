@@ -4,6 +4,9 @@
 #include <utility>
 #include <assert.h>
 #include "ORSServer.h"
+#include "log/Log.h"
+#include "log/Metrics.h"
+#include "core/Time.h"
 #include "statscollector.h"
 #include "sstream"
 #include "rmsimpl.hpp"
@@ -55,33 +58,33 @@ extern int iInstrumentID;
 
 void ORSServer::registerStats()
 {
-    StatsCollector<>::getInstance().init(
+    ::ors::metrics().init(
         config_.logPath + ITime_Logger::GetCurrentYYYYMMDD());
-    // shmread = StatsCollector<>::registerNewStat( "ShmRead", 50, 200 ) ;
-    orsLatency = StatsCollector<>::registerNewStat("MsgCreation", 2000, 5000);
+    // shmread = ::ors::metrics().registerStat( "ShmRead", 50, 200 ) ;
+    orsLatency = ::ors::metrics().registerStat("MsgCreation", 2000, 5000);
 
-    newConfirmSHFE = StatsCollector<>::registerNewStat("New SHFE", 2500000,
+    newConfirmSHFE = ::ors::metrics().registerStat("New SHFE", 2500000,
                                                        6000000);
-    cancelConfirmSHFE = StatsCollector<>::registerNewStat("Cancel SHFE",
+    cancelConfirmSHFE = ::ors::metrics().registerStat("Cancel SHFE",
                                                           2500000, 6000000);
-    newConfirmDCE = StatsCollector<>::registerNewStat("New DCE", 25000000,
+    newConfirmDCE = ::ors::metrics().registerStat("New DCE", 25000000,
                                                       30000000);
-    cancelConfirmDCE = StatsCollector<>::registerNewStat("Cancel DCE", 25000000,
+    cancelConfirmDCE = ::ors::metrics().registerStat("Cancel DCE", 25000000,
                                                          30000000);
-    newConfirmZCE = StatsCollector<>::registerNewStat("New ZCE", 200000000,
+    newConfirmZCE = ::ors::metrics().registerStat("New ZCE", 200000000,
                                                       400000000);
-    cancelConfirmZCE = StatsCollector<>::registerNewStat("Cancel ZCE",
+    cancelConfirmZCE = ::ors::metrics().registerStat("Cancel ZCE",
                                                          200000000, 400000000);
-    newConfirmCFFEX = StatsCollector<>::registerNewStat("New CFFEX", 3000000,
+    newConfirmCFFEX = ::ors::metrics().registerStat("New CFFEX", 3000000,
                                                         6000000);
-    cancelConfirmCFFEX = StatsCollector<>::registerNewStat("Cancel CFFEX",
+    cancelConfirmCFFEX = ::ors::metrics().registerStat("Cancel CFFEX",
                                                            3000000, 6000000);
 
-    rmscheck = StatsCollector<>::registerNewStat("RMS", 2000, 5000);
-    crosscheck = StatsCollector<>::registerNewStat("checkCross", 300, 500);
-    orsdecode = StatsCollector<>::registerNewStat("MsgDecode", 2000, 10000);
-    apiLatency = StatsCollector<>::registerNewStat("ApiLatency", 2000, 20000);
-    respEnqueue = StatsCollector<>::registerNewStat("ResponseEnqueue", 1000,
+    rmscheck = ::ors::metrics().registerStat("RMS", 2000, 5000);
+    crosscheck = ::ors::metrics().registerStat("checkCross", 300, 500);
+    orsdecode = ::ors::metrics().registerStat("MsgDecode", 2000, 10000);
+    apiLatency = ::ors::metrics().registerStat("ApiLatency", 2000, 20000);
+    respEnqueue = ::ors::metrics().registerStat("ResponseEnqueue", 1000,
                                                     20000);
 }
 
@@ -96,7 +99,7 @@ ORSServer::ORSServer(::ors::OrsConfig config, ::ors::OrsTransport& transport)
 
     registerStats();
 
-    lastRecordTime = illuminati::ITime_ClockRT::GetCurrentTime();
+    lastRecordTime = ::ors::nowNanos();
 }
 
 ORSServer::~ORSServer()
@@ -126,7 +129,7 @@ void ORSServer::Start()
             snapshot.accountId = config_.accountId;
             snapshot.errorCode = 4;
             snapshot.errorMsg = "account query timeout";
-            snapshot.timestamp = illuminati::ITime_ClockRT::GetCurrentTime();
+            snapshot.timestamp = ::ors::nowNanos();
             transport_.sendAccount(snapshot);
         }
     });
@@ -142,9 +145,9 @@ void ORSServer::Stop()
     if (accountQueryTimer_.joinable()) {
         accountQueryTimer_.join();
     }
-    ILOG(INFO) << "Logging off\n";
+    ORS_LOG(INFO) << "Logging off\n";
     DoLoggOff();
-    ILOG(INFO) << "Exiting\n";
+    ORS_LOG(INFO) << "Exiting\n";
     exit(0);
 }
 
@@ -152,7 +155,7 @@ void ORSServer::RegisterClient(const ::ors::ClientRegisterRequest& request)
 {
     ::ors::ClientRegisterResult result;
     result.requestId = request.requestId;
-    result.timestamp = illuminati::ITime_ClockRT::GetCurrentTime();
+    result.timestamp = ::ors::nowNanos();
 
     const ::ors::ClientRegistration registration =
         clientRegistry_.registerClient(request.instanceId);
@@ -171,7 +174,7 @@ void ORSServer::QueryAccount(const ::ors::AccountQueryRequest& request)
         snapshot.accountId = config_.accountId;
         snapshot.errorCode = code;
         snapshot.errorMsg = message;
-        snapshot.timestamp = illuminati::ITime_ClockRT::GetCurrentTime();
+        snapshot.timestamp = ::ors::nowNanos();
         transport_.sendAccount(snapshot);
     };
 
@@ -213,7 +216,7 @@ void ORSServer::OnRspQryTradingAccount(
         snapshot.accountId = config_.accountId;
         snapshot.errorCode = code;
         snapshot.errorMsg = message;
-        snapshot.timestamp = illuminati::ITime_ClockRT::GetCurrentTime();
+        snapshot.timestamp = ::ors::nowNanos();
         transport_.sendAccount(snapshot);
         accountQueryState_.finish();
     };
@@ -232,7 +235,7 @@ void ORSServer::OnRspQryTradingAccount(
 
     ::ors::AccountSnapshot snapshot =
         ::ors::mapAccountSnapshot(*pAccount, *sdkRequestId, config_);
-    snapshot.timestamp = illuminati::ITime_ClockRT::GetCurrentTime();
+    snapshot.timestamp = ::ors::nowNanos();
     transport_.sendAccount(snapshot);
     accountQueryState_.finish();
 }
@@ -244,12 +247,12 @@ void ORSServer::RmsError(ResponseType resptype, uint32_t orderid,
     resp->Response_Type = resptype;
     resp->OrderID = orderid;
     resp->ErrorCode = errorNo;
-    resp->TimeStamp = illuminati::ITime_ClockRT::GetCurrentTime();
+    resp->TimeStamp = ::ors::nowNanos();
     transport_.sendResponse(*resp);
-    tempTimeStamp = illuminati::ITime_ClockRT::GetCurrentTime();
-    ILOG(INFO) << "|" << tempTimeStamp << "|"
+    tempTimeStamp = ::ors::nowNanos();
+    ORS_LOG(INFO) << "|" << tempTimeStamp << "|"
                << "RMS error | orderID: " << orderid << " | errorNo: " << errorNo << std::endl;
-    ILOG(INFO) << "|" << tempTimeStamp << "|" << resp->toString() << endl;
+    ORS_LOG(INFO) << "|" << tempTimeStamp << "|" << resp->toString() << endl;
     delete resp;
 }
 
@@ -260,11 +263,11 @@ void ORSServer::RmsWarning(ResponseType resptype, uint32_t orderid,
     resp->Response_Type = resptype;
     resp->OrderID = orderid;
     resp->ErrorCode = errorNo;
-    resp->TimeStamp = illuminati::ITime_ClockRT::GetCurrentTime();
+    resp->TimeStamp = ::ors::nowNanos();
     transport_.sendResponse(*resp);
-    tempTimeStamp = illuminati::ITime_ClockRT::GetCurrentTime();
-    ILOG(INFO) << "|" << tempTimeStamp << "RMS Warning | orderID: " << orderid << " | errorNo: " << errorNo << std::endl;
-    ILOG(INFO) << "|" << tempTimeStamp << "|" << resp->toString() << endl;
+    tempTimeStamp = ::ors::nowNanos();
+    ORS_LOG(INFO) << "|" << tempTimeStamp << "RMS Warning | orderID: " << orderid << " | errorNo: " << errorNo << std::endl;
+    ORS_LOG(INFO) << "|" << tempTimeStamp << "|" << resp->toString() << endl;
     delete resp;
 }
 
@@ -278,16 +281,16 @@ void ORSServer::DoLoggOff()
     iResult = m_pUserTradeApi->ReqUserLogout(&pUserLogout, ++m_iRequestID);
     if (!iResult)
     {
-        tempTimeStamp = illuminati::ITime_ClockRT::GetCurrentTime();
-        ILOG(INFO) << "|" << tempTimeStamp << "|"
+        tempTimeStamp = ::ors::nowNanos();
+        ORS_LOG(INFO) << "|" << tempTimeStamp << "|"
                    << "Logout sent" << std::endl;
         // while (!m_logoffResp) {
         // }
     }
     else
     {
-        tempTimeStamp = illuminati::ITime_ClockRT::GetCurrentTime();
-        ILOG(INFO) << "|" << tempTimeStamp << "|"
+        tempTimeStamp = ::ors::nowNanos();
+        ORS_LOG(INFO) << "|" << tempTimeStamp << "|"
                    << "Logout sent error " << iResult << std::endl;
     }
 }
@@ -318,8 +321,8 @@ void ORSServer::Login()
             config_.mdFlowDir.c_str());
     }
 
-    tempTimeStamp = illuminati::ITime_ClockRT::GetCurrentTime();
-    ILOG(INFO) << "|" << tempTimeStamp << "|"
+    tempTimeStamp = ::ors::nowNanos();
+    ORS_LOG(INFO) << "|" << tempTimeStamp << "|"
                << "Logging in to MD " << FRONT_ADDR_MD << "|" << m_BROKER_ID << "|" << m_INVESTOR_ID << std::endl;
     // create MD classes
     m_pUserMDSpi = new CMdSpi(m_pUserMDApi);
@@ -328,8 +331,8 @@ void ORSServer::Login()
     // m_pUserMDSpi->ReqUserLogin((char*)m_BROKER_ID.c_str(), (char*)m_INVESTOR_ID.c_str(), (char*)m_PASSWORD.c_str());
     m_pUserMDApi->Init();
 
-    tempTimeStamp = illuminati::ITime_ClockRT::GetCurrentTime();
-    ILOG(INFO) << "|" << tempTimeStamp << "|"
+    tempTimeStamp = ::ors::nowNanos();
+    ORS_LOG(INFO) << "|" << tempTimeStamp << "|"
                << "Logging in to ORS " << FRONT_ADDR_ORS << "|" << m_BROKER_ID << "|" << m_INVESTOR_ID << std::endl;
     // create trade classes
     m_pUserTradeApi->RegisterSpi((CThostFtdcTraderSpi *)this);
@@ -344,12 +347,12 @@ void ORSServer::Login()
 
 void ORSServer::OnRspUserLogout(CThostFtdcUserLogoutField *pUserLogout, CThostFtdcRspInfoField *pRspInfo, int nRequestID, bool bIsLast)
 {
-    tempTimeStamp = illuminati::ITime_ClockRT::GetCurrentTime();
+    tempTimeStamp = ::ors::nowNanos();
     if (bIsLast && !IsErrorRspInfo(pRspInfo))
-        ILOG(INFO) << "|" << tempTimeStamp << "|"
+        ORS_LOG(INFO) << "|" << tempTimeStamp << "|"
                    << "User logged out successfully" << std::endl;
     else
-        ILOG(INFO) << "|" << tempTimeStamp << "|"
+        ORS_LOG(INFO) << "|" << tempTimeStamp << "|"
                    << "User logged out failure" << std::endl;
     m_logoffResp = true;
 }
@@ -358,7 +361,7 @@ void ORSServer::OnRspUserLogout(CThostFtdcUserLogoutField *pUserLogout, CThostFt
 void ORSServer::ProcessRequest(RequestMsg *req)
 {
     RequestMsgSerializer rs(*req);
-    ILOGQ(MSG, rs);
+    (void)rs;
     if (!clientRegistered_) {
         RejectOrder(req, "ClientRegister required");
         return;
@@ -408,25 +411,25 @@ void ORSServer::SetCombOffsetFlag(CThostFtdcInputOrderField &req, RequestMsg *re
 
 void ORSServer::SendNewOrder(RequestMsg *request)
 {
-    tempTimeStamp = illuminati::ITime_ClockRT::GetCurrentTime();
-    ILOG(INFO) << "NewOrder ------> " << tempTimeStamp << "|" << __FUNCTION__ << " start OrderRef" << request->OrderID << std::endl;
+    tempTimeStamp = ::ors::nowNanos();
+    ORS_LOG(INFO) << "NewOrder ------> " << tempTimeStamp << "|" << __FUNCTION__ << " start OrderRef" << request->OrderID << std::endl;
     int iResult;
     CThostFtdcInputOrderField req;
     OrderInfo ordinfo;
 
     uint64_t rmstime, ordercrosscheck, apisend;
-    uint64_t curtime = illuminati::ITime_ClockRT::GetCurrentTime();
+    uint64_t curtime = ::ors::nowNanos();
     memset(&req, 0, sizeof(req));
 
     if (!rms.executeNewOrderChecks(*request))
     {
-        ILOG(INFO) << "NewOrder ------> "
+        ORS_LOG(INFO) << "NewOrder ------> "
                    << "NewOrder check failed. orderID:" << request->OrderID << std::endl;
         return;
     }
-    rmstime = illuminati::ITime_ClockRT::GetCurrentTime();
+    rmstime = ::ors::nowNanos();
 
-    ordercrosscheck = illuminati::ITime_ClockRT::GetCurrentTime();
+    ordercrosscheck = ::ors::nowNanos();
 
     if (request->OrdType == MARKET)
     {
@@ -580,7 +583,7 @@ void ORSServer::SendNewOrder(RequestMsg *request)
     req.IsAutoSuspend = 0;
     req.UserForceClose = 0;
     req.RequestID = m_iRequestID + 1;
-    apisend = illuminati::ITime_ClockRT::GetCurrentTime();
+    apisend = ::ors::nowNanos();
     iResult = m_pUserTradeApi->ReqOrderInsert(&req, ++m_iRequestID);
     if (iResult != 0)
     {
@@ -592,7 +595,7 @@ void ORSServer::SendNewOrder(RequestMsg *request)
         return;
     }
 
-    uint64_t endtime = illuminati::ITime_ClockRT::GetCurrentTime();
+    uint64_t endtime = ::ors::nowNanos();
 
     // maintain map here
     ordinfo.requestType = request->Request_Type;
@@ -620,36 +623,36 @@ void ORSServer::SendNewOrder(RequestMsg *request)
     m_ordExchMap[std::string(req.OrderRef)] = request->OrderID;
     m_ordExchMapLock.unlock();
 
-    // StatsCollector<>::record( shmread, ((int64_t)curtime - (int64_t)request->TimeStamp)) ;
-    StatsCollector<>::record(orsLatency,
+    // ::ors::metrics().record( shmread, ((int64_t)curtime - (int64_t)request->TimeStamp)) ;
+    ::ors::metrics().record(orsLatency,
                              ((int64_t)apisend - (int64_t)ordercrosscheck));
-    StatsCollector<>::record(apiLatency,
+    ::ors::metrics().record(apiLatency,
                              ((int64_t)endtime - (int64_t)apisend));
-    StatsCollector<>::record(rmscheck, ((int64_t)rmstime - (int64_t)curtime));
-    StatsCollector<>::record(crosscheck,
+    ::ors::metrics().record(rmscheck, ((int64_t)rmstime - (int64_t)curtime));
+    ::ors::metrics().record(crosscheck,
                              ((int64_t)ordercrosscheck - (int64_t)rmstime));
-    tempTimeStamp = illuminati::ITime_ClockRT::GetCurrentTime();
-    //  ILOG(INFO) << "--->>> "<< tempTimeStamp << "|" << "New Order placed | " << request->Contract_Description.Symbol << " " << request->OrderID  << " " << ORDER_REF << " " << request->Price << " " << request->Quantity << std::endl ;
-    // ILOG(INFO) << "------> "<< tempTimeStamp << "|" << __FUNCTION__  << " end OrderRef"<< request->OrderID << std::endl;
+    tempTimeStamp = ::ors::nowNanos();
+    //  ORS_LOG(INFO) << "--->>> "<< tempTimeStamp << "|" << "New Order placed | " << request->Contract_Description.Symbol << " " << request->OrderID  << " " << ORDER_REF << " " << request->Price << " " << request->Quantity << std::endl ;
+    // ORS_LOG(INFO) << "------> "<< tempTimeStamp << "|" << __FUNCTION__  << " end OrderRef"<< request->OrderID << std::endl;
 }
 
 void ORSServer::SendModifyOrder(RequestMsg *request)
 {
-    tempTimeStamp = illuminati::ITime_ClockRT::GetCurrentTime();
-    ILOG(INFO) << "--->>> " << tempTimeStamp << "|" << __FUNCTION__ << std::endl;
+    tempTimeStamp = ::ors::nowNanos();
+    ORS_LOG(INFO) << "--->>> " << tempTimeStamp << "|" << __FUNCTION__ << std::endl;
     RejectOrder(request, "Modify orders not allowed");
     return;
 }
 
 void ORSServer::SendCancelOrder(RequestMsg *request)
 {
-    tempTimeStamp = illuminati::ITime_ClockRT::GetCurrentTime();
-    ILOG(INFO) << "------> " << tempTimeStamp << "|" << __FUNCTION__ << " start OrderRef" << request->OrderID << std::endl;
+    tempTimeStamp = ::ors::nowNanos();
+    ORS_LOG(INFO) << "------> " << tempTimeStamp << "|" << __FUNCTION__ << " start OrderRef" << request->OrderID << std::endl;
     CThostFtdcInputOrderActionField req;
     OrderInfo ordinfo;
     int iResult;
     uint64_t rmstime, apisend;
-    uint64_t curtime = illuminati::ITime_ClockRT::GetCurrentTime();
+    uint64_t curtime = ::ors::nowNanos();
 
     memset(&req, 0, sizeof(req));
 
@@ -667,7 +670,7 @@ void ORSServer::SendCancelOrder(RequestMsg *request)
     {
         return;
     }
-    rmstime = illuminati::ITime_ClockRT::GetCurrentTime();
+    rmstime = ::ors::nowNanos();
 
     strcpy(req.BrokerID, m_BROKER_ID.c_str());
     // strcpy(req.UserID, m_BROKER_ID.c_str());
@@ -697,16 +700,16 @@ void ORSServer::SendCancelOrder(RequestMsg *request)
     }
     strcpy(req.OrderSysID, ordinfo.OrderSysID);
 
-    apisend = illuminati::ITime_ClockRT::GetCurrentTime();
-    ILOG(INFO) << "After API call 4\n";
+    apisend = ::ors::nowNanos();
+    ORS_LOG(INFO) << "After API call 4\n";
     iResult = m_pUserTradeApi->ReqOrderAction(&req, ++m_iRequestID);
-    ILOG(INFO) << "After API call 4\n";
+    ORS_LOG(INFO) << "After API call 4\n";
     if (iResult != 0)
     {
         RejectOrder(request, "Cancel order send error");
         return;
     }
-    uint64_t endtime = illuminati::ITime_ClockRT::GetCurrentTime();
+    uint64_t endtime = ::ors::nowNanos();
 
     ordinfo.ModQtySent = 0;
     ordinfo.requestType = CANCELORDER; // request->Request_Type;
@@ -716,32 +719,32 @@ void ORSServer::SendCancelOrder(RequestMsg *request)
     m_ordLocalMap[request->OrderID] = ordinfo;
     m_ordLocalMapLock.unlock();
 
-    tempTimeStamp = illuminati::ITime_ClockRT::GetCurrentTime();
-    ILOG(INFO) << "--->>> " << tempTimeStamp << "|"
+    tempTimeStamp = ::ors::nowNanos();
+    ORS_LOG(INFO) << "--->>> " << tempTimeStamp << "|"
                << "Cancel order sent | " << ordinfo.localID << " | " << ordinfo.exchID << '|' << request->Price << '|' << request->Quantity << std::endl;
-    ILOG(INFO) << "------> " << tempTimeStamp << "|" << __FUNCTION__ << " end OrderRef" << request->OrderID << std::endl;
+    ORS_LOG(INFO) << "------> " << tempTimeStamp << "|" << __FUNCTION__ << " end OrderRef" << request->OrderID << std::endl;
 
-    // StatsCollector<>::record( shmread, ((int64_t)curtime - (int64_t)request->TimeStamp)) ;
-    StatsCollector<>::record(orsLatency,
+    // ::ors::metrics().record( shmread, ((int64_t)curtime - (int64_t)request->TimeStamp)) ;
+    ::ors::metrics().record(orsLatency,
                              ((int64_t)apisend - (int64_t)rmstime));
-    StatsCollector<>::record(apiLatency,
+    ::ors::metrics().record(apiLatency,
                              ((int64_t)endtime - (int64_t)apisend));
-    StatsCollector<>::record(rmscheck, ((int64_t)rmstime - (int64_t)curtime));
+    ::ors::metrics().record(rmscheck, ((int64_t)rmstime - (int64_t)curtime));
 }
 
 void ORSServer::logOrderInfoResponse(const char *s, OrderInfo &ordinfo,
                                      ResponseMsg *resp)
 {
-    ILOG(INFO) << "|" << tempTimeStamp << "|" << s << ordinfo.localID << " | " << ordinfo.exchID << " | " << ordinfo.OrderSysID << " | " << ordinfo.ScripCode << " | " << ordinfo.Price << " | " << ordinfo.Qty << " | " << (resp->TimeStamp - ordinfo.sendTime) << std::endl;
+    ORS_LOG(INFO) << "|" << tempTimeStamp << "|" << s << ordinfo.localID << " | " << ordinfo.exchID << " | " << ordinfo.OrderSysID << " | " << ordinfo.ScripCode << " | " << ordinfo.Price << " | " << ordinfo.Qty << " | " << (resp->TimeStamp - ordinfo.sendTime) << std::endl;
 }
 
 void ORSServer::PushUpdate(ResponseMsg *resp)
 {
-    resp->TimeStamp = illuminati::ITime_ClockRT::GetCurrentTime();
+    resp->TimeStamp = ::ors::nowNanos();
     // m_responseInterface->lock();
     transport_.sendResponse(*resp);
-    StatsCollector<>::record(respEnqueue,
-                             illuminati::ITime_ClockRT::GetCurrentTime() - resp->TimeStamp);
+    ::ors::metrics().record(respEnqueue,
+                             ::ors::nowNanos() - resp->TimeStamp);
     // m_responseInterface->unlock();
 
     OrderInfo ordinfo;
@@ -753,29 +756,29 @@ void ORSServer::PushUpdate(ResponseMsg *resp)
     {
         switch (resp->Response_Type)
         {
-            tempTimeStamp = illuminati::ITime_ClockRT::GetCurrentTime();
+            tempTimeStamp = ::ors::nowNanos();
         case NEW_ORDER_CONFIRM:
         case ORDER_ERROR:
             switch (ordinfo.exchange)
             {
             case CHINA_SHFE:
                 logOrderInfoResponse("NC | SHFE", ordinfo, resp);
-                StatsCollector<>::record(newConfirmSHFE,
+                ::ors::metrics().record(newConfirmSHFE,
                                          resp->TimeStamp - ordinfo.sendTime);
                 break;
             case CHINA_CFFEX:
                 logOrderInfoResponse("NC | CFFEX", ordinfo, resp);
-                StatsCollector<>::record(newConfirmCFFEX,
+                ::ors::metrics().record(newConfirmCFFEX,
                                          resp->TimeStamp - ordinfo.sendTime);
                 break;
             case CHINA_ZCE:
                 logOrderInfoResponse("NC | ZCE", ordinfo, resp);
-                StatsCollector<>::record(newConfirmZCE,
+                ::ors::metrics().record(newConfirmZCE,
                                          resp->TimeStamp - ordinfo.sendTime);
                 break;
             case CHINA_DCE:
                 logOrderInfoResponse("NC | DCE", ordinfo, resp);
-                StatsCollector<>::record(newConfirmDCE,
+                ::ors::metrics().record(newConfirmDCE,
                                          resp->TimeStamp - ordinfo.sendTime);
                 break;
             }
@@ -786,22 +789,22 @@ void ORSServer::PushUpdate(ResponseMsg *resp)
             {
             case CHINA_SHFE:
                 logOrderInfoResponse("CC | SHFE", ordinfo, resp);
-                StatsCollector<>::record(cancelConfirmSHFE,
+                ::ors::metrics().record(cancelConfirmSHFE,
                                          resp->TimeStamp - ordinfo.sendTime);
                 break;
             case CHINA_CFFEX:
                 logOrderInfoResponse("CC | CFFEX", ordinfo, resp);
-                StatsCollector<>::record(cancelConfirmCFFEX,
+                ::ors::metrics().record(cancelConfirmCFFEX,
                                          resp->TimeStamp - ordinfo.sendTime);
                 break;
             case CHINA_ZCE:
                 logOrderInfoResponse("CC | ZCE", ordinfo, resp);
-                StatsCollector<>::record(cancelConfirmZCE,
+                ::ors::metrics().record(cancelConfirmZCE,
                                          resp->TimeStamp - ordinfo.sendTime);
                 break;
             case CHINA_DCE:
                 logOrderInfoResponse("CC | DCE", ordinfo, resp);
-                StatsCollector<>::record(cancelConfirmDCE,
+                ::ors::metrics().record(cancelConfirmDCE,
                                          resp->TimeStamp - ordinfo.sendTime);
                 break;
             }
@@ -854,22 +857,22 @@ void ORSServer::RejectOrder(RequestMsg *req, const char *Reason)
         // response->Response_Type = ORDER_ERROR ;
         response.Response_Type = ORS_REJECT;
         response.ErrorCode = ERROR_CODE_CROSS_REJECT;
-        tempTimeStamp = illuminati::ITime_ClockRT::GetCurrentTime();
-        ILOG(INFO) << "--->>> " << tempTimeStamp << "|"
+        tempTimeStamp = ::ors::nowNanos();
+        ORS_LOG(INFO) << "--->>> " << tempTimeStamp << "|"
                    << "New Order rejected | " << req->OrderID << " " << Reason << std::endl;
     }
     if (req->Request_Type == MODIFYORDER)
     {
         response.Response_Type = MODIFY_ORDER_REJECT;
-        tempTimeStamp = illuminati::ITime_ClockRT::GetCurrentTime();
-        ILOG(INFO) << "--->>> " << tempTimeStamp << "|"
+        tempTimeStamp = ::ors::nowNanos();
+        ORS_LOG(INFO) << "--->>> " << tempTimeStamp << "|"
                    << "Modify Order rejected | " << req->OrderID << " " << Reason << std::endl;
     }
     if (req->Request_Type == CANCELORDER)
     {
         response.Response_Type = CANCEL_ORDER_REJECT;
-        tempTimeStamp = illuminati::ITime_ClockRT::GetCurrentTime();
-        ILOG(INFO) << "--->>> " << tempTimeStamp << "|"
+        tempTimeStamp = ::ors::nowNanos();
+        ORS_LOG(INFO) << "--->>> " << tempTimeStamp << "|"
                    << "Cancel Order rejected | " << req->OrderID << " " << Reason << std::endl;
     }
     response.OrderID = req->OrderID;
@@ -881,12 +884,12 @@ void ORSServer::RejectOrder(RequestMsg *req, const char *Reason)
 void ORSServer::OnRtnInstrumentStatus(CThostFtdcInstrumentStatusField *pInstrumentStatus)
 {
     MasterData data;
-    tempTimeStamp = illuminati::ITime_ClockRT::GetCurrentTime();
-    ILOG(INFO) << "--->>> " << tempTimeStamp << "|" << __FUNCTION__ << "InstrumentID : " << pInstrumentStatus->InstrumentID << " ExchangeID : " << pInstrumentStatus->ExchangeID << " InstrumentStatus : " << pInstrumentStatus->InstrumentStatus << std::endl;
+    tempTimeStamp = ::ors::nowNanos();
+    ORS_LOG(INFO) << "--->>> " << tempTimeStamp << "|" << __FUNCTION__ << "InstrumentID : " << pInstrumentStatus->InstrumentID << " ExchangeID : " << pInstrumentStatus->ExchangeID << " InstrumentStatus : " << pInstrumentStatus->InstrumentStatus << std::endl;
     if (pInstrumentStatus == NULL)
     {
-        tempTimeStamp = illuminati::ITime_ClockRT::GetCurrentTime();
-        ILOG(INFO) << "--->>> " << tempTimeStamp << "|"
+        tempTimeStamp = ::ors::nowNanos();
+        ORS_LOG(INFO) << "--->>> " << tempTimeStamp << "|"
                    << "First param as NULL OnRspQryInstrument" << std::endl;
         return;
     }
@@ -915,8 +918,8 @@ void ORSServer::OnRtnInstrumentStatus(CThostFtdcInstrumentStatusField *pInstrume
         data.NetPositon = 0;
         // strcpy(ppInstrumentStatusID[iInstrumentID++], pInstrumentStatus->InstrumentID);
         
-            tempTimeStamp = illuminati::ITime_ClockRT::GetCurrentTime();
-            ILOG(INFO) << "--->>> " << tempTimeStamp << "|" << data.ScripCode << "|" << data.RoundLot << "|" << data.DecimalLocator << "|" << data.ExpiryDate << "|" << data.ExchangeID << "|" << data.PriceTick << "|" << data.IsTrading << std::endl;
+            tempTimeStamp = ::ors::nowNanos();
+            ORS_LOG(INFO) << "--->>> " << tempTimeStamp << "|" << data.ScripCode << "|" << data.RoundLot << "|" << data.DecimalLocator << "|" << data.ExpiryDate << "|" << data.ExchangeID << "|" << data.PriceTick << "|" << data.IsTrading << std::endl;
         m_symbolMap[std::string(pInstrumentStatus->InstrumentID)] = data;
     }
     /*
@@ -935,8 +938,8 @@ void ORSServer::OnRtnInstrumentStatus(CThostFtdcInstrumentStatusField *pInstrume
 
 void ORSServer::ReqQryInstrument(char *szInstrumentID)
 {
-    tempTimeStamp = illuminati::ITime_ClockRT::GetCurrentTime();
-    ILOG(INFO) << "--->>> " << tempTimeStamp << "|" << __FUNCTION__ << std::endl;
+    tempTimeStamp = ::ors::nowNanos();
+    ORS_LOG(INFO) << "--->>> " << tempTimeStamp << "|" << __FUNCTION__ << std::endl;
     CThostFtdcQryInstrumentField req;
     memset(&req, 0, sizeof(req));
     if (szInstrumentID == NULL)
@@ -948,13 +951,13 @@ void ORSServer::ReqQryInstrument(char *szInstrumentID)
         strcpy(req.InstrumentID, szInstrumentID);
     }
     int iResult = m_pUserTradeApi->ReqQryInstrument(&req, ++m_iRequestID);
-    tempTimeStamp = illuminati::ITime_ClockRT::GetCurrentTime();
+    tempTimeStamp = ::ors::nowNanos();
     if (!iResult)
-        ILOG(INFO) << "--->>> " << tempTimeStamp << "|"
+        ORS_LOG(INFO) << "--->>> " << tempTimeStamp << "|"
                    << "Instrument info query successful" << std::endl;
     else
     {
-        ILOG(INFO) << "--->>> " << tempTimeStamp << "|"
+        ORS_LOG(INFO) << "--->>> " << tempTimeStamp << "|"
                    << "Instrument info query failed... exiting..." << std::endl;
         exit(1);
     }
@@ -969,7 +972,7 @@ void ORSServer::ReqQryPosition()
     const int result = m_pUserTradeApi->ReqQryInvestorPosition(
         &request, ++m_iRequestID);
     if (result != 0) {
-        ILOG(INFO) << "Position query failed rc=" << result << std::endl;
+        ORS_LOG(INFO) << "Position query failed rc=" << result << std::endl;
     }
 }
 
@@ -980,20 +983,20 @@ void ORSServer::ReqQryAccount()
 
 void ORSServer::OnRspQryInstrument(CThostFtdcInstrumentField *pInstrument, CThostFtdcRspInfoField *pRspInfo, int nRequestID, bool bIsLast)
 {
-    tempTimeStamp = illuminati::ITime_ClockRT::GetCurrentTime();
-    ILOG(INFO) << "--->>> " << tempTimeStamp << "|" << __FUNCTION__ << std::endl;
+    tempTimeStamp = ::ors::nowNanos();
+    ORS_LOG(INFO) << "--->>> " << tempTimeStamp << "|" << __FUNCTION__ << std::endl;
     MasterData data;
     if (pInstrument == NULL)
     {
-        tempTimeStamp = illuminati::ITime_ClockRT::GetCurrentTime();
-        ILOG(INFO) << "--->>> " << tempTimeStamp << "|"
+        tempTimeStamp = ::ors::nowNanos();
+        ORS_LOG(INFO) << "--->>> " << tempTimeStamp << "|"
                    << "First param as NULL OnRspQryInstrument" << std::endl;
         return;
     }
     if (!IsErrorRspInfo(pRspInfo))
     {
-        tempTimeStamp = illuminati::ITime_ClockRT::GetCurrentTime();
-        ILOG(INFO) << "--->>> " << tempTimeStamp << "|"
+        tempTimeStamp = ::ors::nowNanos();
+        ORS_LOG(INFO) << "--->>> " << tempTimeStamp << "|"
                    << "Instrument ID: " << pInstrument->InstrumentID << std::endl;
         if (pInstrument->ProductClass == '1' && m_symbolMap.find(std::string(pInstrument->InstrumentID)) == m_symbolMap.end())
         {
@@ -1018,21 +1021,21 @@ void ORSServer::OnRspQryInstrument(CThostFtdcInstrumentField *pInstrument, CThos
             data.NetPositon = 0;
             // strcpy(ppInstrumentID[iInstrumentID++], pInstrument->InstrumentID);
             
-                tempTimeStamp = illuminati::ITime_ClockRT::GetCurrentTime();
-                ILOG(INFO) << "--->>> " << tempTimeStamp << "|" << data.ScripCode << "|" << data.RoundLot << "|" << data.DecimalLocator << "|" << data.ExpiryDate << "|" << data.ExchangeID << "|" << data.PriceTick << "|" << data.IsTrading << std::endl;
+                tempTimeStamp = ::ors::nowNanos();
+                ORS_LOG(INFO) << "--->>> " << tempTimeStamp << "|" << data.ScripCode << "|" << data.RoundLot << "|" << data.DecimalLocator << "|" << data.ExpiryDate << "|" << data.ExchangeID << "|" << data.PriceTick << "|" << data.IsTrading << std::endl;
             m_symbolMap[std::string(pInstrument->InstrumentID)] = data;
         }
     }
     else
     {
-        tempTimeStamp = illuminati::ITime_ClockRT::GetCurrentTime();
-        ILOG(INFO) << "--->>> " << tempTimeStamp << "|"
+        tempTimeStamp = ::ors::nowNanos();
+        ORS_LOG(INFO) << "--->>> " << tempTimeStamp << "|"
                    << "OnRspQryInstrument error on callback" << std::endl;
     }
     if (bIsLast)
     {
-        tempTimeStamp = illuminati::ITime_ClockRT::GetCurrentTime();
-        ILOG(INFO) << "--->>> " << tempTimeStamp << "|"
+        tempTimeStamp = ::ors::nowNanos();
+        ORS_LOG(INFO) << "--->>> " << tempTimeStamp << "|"
                    << "Instrument query complete" << std::endl;
         m_pUserMDSpi->SubscribeMarketData();
         rms.setExchangeInstrDefinitionMap(m_symbolMap, true, true, false);
@@ -1046,7 +1049,7 @@ void ORSServer::OnRspQryInvestorPosition(
 {
     if (pRspInfo != nullptr && pRspInfo->ErrorID != 0) {
         pendingPositionRows_.clear();
-        ILOG(INFO) << "Position query error: " << pRspInfo->ErrorID << " "
+        ORS_LOG(INFO) << "Position query error: " << pRspInfo->ErrorID << " "
                    << pRspInfo->ErrorMsg << std::endl;
         return;
     }
@@ -1066,7 +1069,7 @@ void ORSServer::OnRspQryInvestorPosition(
         positionTable_.replaceFromQuery(std::move(pendingPositionRows_));
         pendingPositionRows_.clear();
         m_connected = true;
-        ILOG(INFO) << "Position query complete; ORS ready" << std::endl;
+        ORS_LOG(INFO) << "Position query complete; ORS ready" << std::endl;
     }
 }
 
@@ -1089,34 +1092,34 @@ void ORSServer::Authenticate()
     strncpy(authReq.AppID, m_APPID.c_str(), sizeof(TThostFtdcAppIDType));
     auto ret = m_pUserTradeApi->ReqAuthenticate(&authReq, m_iRequestID++);
 
-    ILOG(INFO) << "|ctp auth response:[" << ret << "], waiting for auth push" << std::endl;
+    ORS_LOG(INFO) << "|ctp auth response:[" << ret << "], waiting for auth push" << std::endl;
     std::cout << "ctp auth response:[" << ret << "], waiting for auth push" << endl;
 }
 
 void ORSServer::ReqUserLogin()
 {
-    tempTimeStamp = illuminati::ITime_ClockRT::GetCurrentTime();
-    ILOG(INFO) << "|" << tempTimeStamp << "|" << __FUNCTION__ << std::endl;
+    tempTimeStamp = ::ors::nowNanos();
+    ORS_LOG(INFO) << "|" << tempTimeStamp << "|" << __FUNCTION__ << std::endl;
     CThostFtdcReqUserLoginField req;
     memset(&req, 0, sizeof(req));
     strcpy(req.BrokerID, m_BROKER_ID.c_str());
     strcpy(req.UserID, m_INVESTOR_ID.c_str());
     strcpy(req.Password, m_PASSWORD.c_str());
-    tempTimeStamp = illuminati::ITime_ClockRT::GetCurrentTime();
-    ILOG(INFO) << "|" << tempTimeStamp << "|"
+    tempTimeStamp = ::ors::nowNanos();
+    ORS_LOG(INFO) << "|" << tempTimeStamp << "|"
                << "BrokerID " << req.BrokerID << " UserID " << req.UserID << std::endl;
     m_logonResp = false;
     int iResult = m_pUserTradeApi->ReqUserLogin(&req, ++m_iRequestID);
     if (!iResult)
     {
-        tempTimeStamp = illuminati::ITime_ClockRT::GetCurrentTime();
-        ILOG(INFO) << "|" << tempTimeStamp << "|"
+        tempTimeStamp = ::ors::nowNanos();
+        ORS_LOG(INFO) << "|" << tempTimeStamp << "|"
                    << "Login send success" << std::endl;
     }
     else
     {
-        tempTimeStamp = illuminati::ITime_ClockRT::GetCurrentTime();
-        ILOG(INFO) << "|" << tempTimeStamp << "|"
+        tempTimeStamp = ::ors::nowNanos();
+        ORS_LOG(INFO) << "|" << tempTimeStamp << "|"
                    << "Login send failure" << std::endl;
         exit(0);
     }
@@ -1125,8 +1128,8 @@ void ORSServer::ReqUserLogin()
 
 void ORSServer::OnFrontConnected()
 {
-    tempTimeStamp = illuminati::ITime_ClockRT::GetCurrentTime();
-    ILOG(INFO) << "|" << tempTimeStamp << "|"
+    tempTimeStamp = ::ors::nowNanos();
+    ORS_LOG(INFO) << "|" << tempTimeStamp << "|"
                << "OnFrontConnected ORS" << std::endl;
     Authenticate();
     // ReqUserLogin();
@@ -1134,8 +1137,8 @@ void ORSServer::OnFrontConnected()
 
 void ORSServer::OnRspSettlementInfoConfirm(CThostFtdcSettlementInfoConfirmField *pSettlementInfoConfirm, CThostFtdcRspInfoField *pRspInfo, int nRequestID, bool bIsLast)
 {
-    tempTimeStamp = illuminati::ITime_ClockRT::GetCurrentTime();
-    ILOG(INFO) << "|" << tempTimeStamp << "|"
+    tempTimeStamp = ::ors::nowNanos();
+    ORS_LOG(INFO) << "|" << tempTimeStamp << "|"
                << "OnRspSettlementInfoConfirm" << std::endl;
     if (bIsLast && !IsErrorRspInfo(pRspInfo))
     {
@@ -1165,8 +1168,8 @@ bool ORSServer::OrderCrossCheck(RequestMsg *request)
                 if (!strcmp(request->Contract_Description.Symbol,
                             openorders->second.ScripCode))
                 {
-                    tempTimeStamp = illuminati::ITime_ClockRT::GetCurrentTime();
-                    ILOG(INFO) << "|" << tempTimeStamp << "|"
+                    tempTimeStamp = ::ors::nowNanos();
+                    ORS_LOG(INFO) << "|" << tempTimeStamp << "|"
                                << "Cross : " << openorders->first << " | " << request->OrderID << std::endl;
                     m_ordLocalMapLock.unlock();
                     return true;
@@ -1186,14 +1189,14 @@ bool ORSServer::OrderCrossCheck(RequestMsg *request)
  OrderInfo ordinfo;
  int iResult;
  uint64_t rmstime, apisend;
- uint64_t curtime = illuminati::ITime_ClockRT::GetCurrentTime() ;
+ uint64_t curtime = ::ors::nowNanos() ;
  /*
  if (!rms.executeCancelOrderChecks(*request))
  {
  return;
  }
  *
- rmstime = illuminati::ITime_ClockRT::GetCurrentTime();
+ rmstime = ::ors::nowNanos();
  CSgitFtdcInputOrderActionField reqOrderAction = { 0 };
 
  if(m_ordLocalMap.find(request->OrderID) == m_ordLocalMap.end())
@@ -1216,14 +1219,14 @@ bool ORSServer::OrderCrossCheck(RequestMsg *request)
  << " ExchangeID " << req.ExchangeID << " OrderSysID " << req.OrderSysID << std::endl;
  *
 
- apisend = illuminati::ITime_ClockRT::GetCurrentTime() ;
+ apisend = ::ors::nowNanos() ;
  iResult = m_pUserTradeApi->ReqOrderAction(&reqOrderAction, ++m_iRequestID);
  if (iResult != 0)
  {
  RejectOrder( request, "Cancel order send error\n") ;
  return ;
  }
- uint64_t endtime = illuminati::ITime_ClockRT::GetCurrentTime() ;
+ uint64_t endtime = ::ors::nowNanos() ;
 
  ordinfo.ModQtySent = 0;
  ordinfo.requestType = request->Request_Type;
@@ -1234,10 +1237,10 @@ bool ORSServer::OrderCrossCheck(RequestMsg *request)
 
  std::cout << "Cancel order sent | " << ordinfo.localID << " | " << ordinfo.exchID << '|' << request->Price << '|' << request->Quantity << std::endl ;
 
- //StatsCollector<>::record( shmread, ((int64_t)curtime - (int64_t)request->TimeStamp)) ;
- StatsCollector<>::record( orsLatency, ((int64_t)apisend - (int64_t)rmstime)) ;
- StatsCollector<>::record( apiLatency, ((int64_t)endtime - (int64_t)apisend)) ;
- StatsCollector<>::record( rmscheck, ((int64_t)rmstime - (int64_t)curtime)) ;
+ //::ors::metrics().record( shmread, ((int64_t)curtime - (int64_t)request->TimeStamp)) ;
+ ::ors::metrics().record( orsLatency, ((int64_t)apisend - (int64_t)rmstime)) ;
+ ::ors::metrics().record( apiLatency, ((int64_t)endtime - (int64_t)apisend)) ;
+ ::ors::metrics().record( rmscheck, ((int64_t)rmstime - (int64_t)curtime)) ;
  }
  */
 
@@ -1249,7 +1252,7 @@ bool ORSServer::GetOrderInfo(const char *orderref, OrderInfo &orderinfo)
     auto localID = m_ordExchMap.find(std::string(orderref));
     if (localID == m_ordExchMap.end())
     {
-        ILOG(FATAL) << "OrderRef: " << orderref << " not found in map\n";
+        ORS_LOG(FATAL) << "OrderRef: " << orderref << " not found in map\n";
         m_ordExchMapLock.unlock();
         return false;
     }
@@ -1264,7 +1267,7 @@ bool ORSServer::GetOrderInfo(const char *orderref, OrderInfo &orderinfo)
     auto oinfo_it = m_ordLocalMap.find(oid);
     if (oinfo_it == m_ordLocalMap.end())
     {
-        ILOG(FATAL) << "OrderID: " << oid << " not found in map\n";
+        ORS_LOG(FATAL) << "OrderID: " << oid << " not found in map\n";
         m_ordLocalMapLock.unlock();
         return false;
     }
@@ -1291,8 +1294,8 @@ void ORSServer::RemoveFromMap(const char *exchid, int32_t localid)
     OrderAccountMapIter2 iter2 = m_ordExchMap.find(std::string(exchid));
     if (iter2 != m_ordExchMap.end())
     {
-        tempTimeStamp = illuminati::ITime_ClockRT::GetCurrentTime();
-        //   ILOG(INFO) << "--->>> "<< tempTimeStamp << "|" << "Erased order from map " << localid << " | " << exchid << std::endl;
+        tempTimeStamp = ::ors::nowNanos();
+        //   ORS_LOG(INFO) << "--->>> "<< tempTimeStamp << "|" << "Erased order from map " << localid << " | " << exchid << std::endl;
         m_ordExchMap.erase(iter2);
     }
     m_ordExchMapLock.unlock();
@@ -1323,8 +1326,8 @@ void ORSServer::OnRspOrderAction(CThostFtdcOrderActionField *pOrderAction, CThos
 
 void ORSServer::OnRspOrderInsert(CThostFtdcInputOrderField *pInputOrder, CThostFtdcRspInfoField *pRspInfo, int nRequestID, bool bIsLast)
 {
-    tempTimeStamp = illuminati::ITime_ClockRT::GetCurrentTime();
-    ILOG(INFO) << "------> " << tempTimeStamp << "|" << __FUNCTION__ << " start OrderRef " << pInputOrder->OrderRef << " OrderSysID : " << pInputOrder->OrderRef << " ErrorID : " << pRspInfo->ErrorID << " ErrorMsg : " << pRspInfo->ErrorMsg << std::endl;
+    tempTimeStamp = ::ors::nowNanos();
+    ORS_LOG(INFO) << "------> " << tempTimeStamp << "|" << __FUNCTION__ << " start OrderRef " << pInputOrder->OrderRef << " OrderSysID : " << pInputOrder->OrderRef << " ErrorID : " << pRspInfo->ErrorID << " ErrorMsg : " << pRspInfo->ErrorMsg << std::endl;
     bool bRemoveOrder = false;
     // Changed since error code 0 is also valid in this case
     // if(pRspInfo->ErrorID != 0)
@@ -1347,22 +1350,22 @@ void ORSServer::OnRspOrderInsert(CThostFtdcInputOrderField *pInputOrder, CThostF
         {
         case NEWORDER:
             response.Response_Type = ORDER_ERROR;
-            tempTimeStamp = illuminati::ITime_ClockRT::GetCurrentTime();
-            ILOG(INFO) << "--->>> " << tempTimeStamp << "|"
+            tempTimeStamp = ::ors::nowNanos();
+            ORS_LOG(INFO) << "--->>> " << tempTimeStamp << "|"
                        << "New order error | " << ordinfo.ClientID << " | " << ordinfo.ScripCode << " | " << ordinfo.localID << " | " << ordinfo.exchID << " | " << ordinfo.Transaction_Type << " | " << ordinfo.Price << " | " << ordinfo.Qty << std::endl;
             bRemoveOrder = true;
             break;
         case CANCELORDER:
             response.Response_Type = CANCEL_ORDER_REJECT;
-            tempTimeStamp = illuminati::ITime_ClockRT::GetCurrentTime();
-            ILOG(INFO) << "--->>> " << tempTimeStamp << "|"
+            tempTimeStamp = ::ors::nowNanos();
+            ORS_LOG(INFO) << "--->>> " << tempTimeStamp << "|"
                        << "Cancel reject | " << ordinfo.ClientID << " | " << ordinfo.ScripCode << " | " << ordinfo.localID << " | " << ordinfo.exchID << " | " << ordinfo.Transaction_Type << " | " << ordinfo.Price << " | " << ordinfo.Qty << std::endl;
             bRemoveOrder = false;
             break;
         default:
             response.Response_Type = ORDER_ERROR;
-            tempTimeStamp = illuminati::ITime_ClockRT::GetCurrentTime();
-            ILOG(INFO) << "--->>> " << tempTimeStamp << "|"
+            tempTimeStamp = ::ors::nowNanos();
+            ORS_LOG(INFO) << "--->>> " << tempTimeStamp << "|"
                        << "unknown Reject | " << ordinfo.ClientID << " | " << ordinfo.ScripCode << " | " << ordinfo.localID << " | " << ordinfo.exchID << " | " << ordinfo.Transaction_Type << " | " << ordinfo.Price << " | " << ordinfo.Qty << std::endl;
             bRemoveOrder = true;
             break;
@@ -1380,14 +1383,14 @@ void ORSServer::OnRspOrderInsert(CThostFtdcInputOrderField *pInputOrder, CThostF
             m_ordLocalMapLock.unlock();
         }
     }
-    tempTimeStamp = illuminati::ITime_ClockRT::GetCurrentTime();
-    ILOG(INFO) << "------> " << tempTimeStamp << "|" << __FUNCTION__ << " end OrderRef" << pInputOrder->OrderRef << std::endl;
+    tempTimeStamp = ::ors::nowNanos();
+    ORS_LOG(INFO) << "------> " << tempTimeStamp << "|" << __FUNCTION__ << " end OrderRef" << pInputOrder->OrderRef << std::endl;
 }
 
 void ORSServer::OnErrRtnOrderAction(CThostFtdcOrderActionField *pOrderAction, CThostFtdcRspInfoField *pRspInfo)
 {
-    tempTimeStamp = illuminati::ITime_ClockRT::GetCurrentTime();
-    ILOG(INFO) << "------> " << tempTimeStamp << "|" << __FUNCTION__ << " start OrderRef " << pOrderAction->OrderRef << " OrderSysID : " << pOrderAction->OrderSysID << " ErrorID : " << pRspInfo->ErrorID << " ErrorMsg : " << pRspInfo->ErrorMsg << std::endl;
+    tempTimeStamp = ::ors::nowNanos();
+    ORS_LOG(INFO) << "------> " << tempTimeStamp << "|" << __FUNCTION__ << " start OrderRef " << pOrderAction->OrderRef << " OrderSysID : " << pOrderAction->OrderSysID << " ErrorID : " << pRspInfo->ErrorID << " ErrorMsg : " << pRspInfo->ErrorMsg << std::endl;
     bool bRemoveOrder = false;
     // Changed since error code 0 is also valid in this case
     // if(pRspInfo->ErrorID != 0)
@@ -1409,22 +1412,22 @@ void ORSServer::OnErrRtnOrderAction(CThostFtdcOrderActionField *pOrderAction, CT
         {
         case NEWORDER:
             response.Response_Type = ORDER_ERROR;
-            tempTimeStamp = illuminati::ITime_ClockRT::GetCurrentTime();
-            ILOG(INFO) << "--->>> " << tempTimeStamp << "|"
+            tempTimeStamp = ::ors::nowNanos();
+            ORS_LOG(INFO) << "--->>> " << tempTimeStamp << "|"
                        << "New order error | " << ordinfo.ClientID << " | " << ordinfo.ScripCode << " | " << ordinfo.localID << " | " << ordinfo.exchID << " | " << ordinfo.Transaction_Type << " | " << ordinfo.Price << " | " << ordinfo.Qty << std::endl;
             bRemoveOrder = true;
             break;
         case CANCELORDER:
             response.Response_Type = CANCEL_ORDER_REJECT;
-            tempTimeStamp = illuminati::ITime_ClockRT::GetCurrentTime();
-            ILOG(INFO) << "--->>> " << tempTimeStamp << "|"
+            tempTimeStamp = ::ors::nowNanos();
+            ORS_LOG(INFO) << "--->>> " << tempTimeStamp << "|"
                        << "Cancel reject | " << ordinfo.ClientID << " | " << ordinfo.ScripCode << " | " << ordinfo.localID << " | " << ordinfo.exchID << " | " << ordinfo.Transaction_Type << " | " << ordinfo.Price << " | " << ordinfo.Qty << std::endl;
             bRemoveOrder = false;
             break;
         default:
             response.Response_Type = ORDER_ERROR;
-            tempTimeStamp = illuminati::ITime_ClockRT::GetCurrentTime();
-            ILOG(INFO) << "--->>> " << tempTimeStamp << "|"
+            tempTimeStamp = ::ors::nowNanos();
+            ORS_LOG(INFO) << "--->>> " << tempTimeStamp << "|"
                        << "unknown Reject | " << ordinfo.ClientID << " | " << ordinfo.ScripCode << " | " << ordinfo.localID << " | " << ordinfo.exchID << " | " << ordinfo.Transaction_Type << " | " << ordinfo.Price << " | " << ordinfo.Qty << std::endl;
             bRemoveOrder = true;
             break;
@@ -1442,16 +1445,16 @@ void ORSServer::OnErrRtnOrderAction(CThostFtdcOrderActionField *pOrderAction, CT
             m_ordLocalMapLock.unlock();
         }
     }
-    tempTimeStamp = illuminati::ITime_ClockRT::GetCurrentTime();
-    ILOG(INFO) << "------> " << tempTimeStamp << "|" << __FUNCTION__ << " end OrderRef" << pOrderAction->OrderRef << std::endl;
+    tempTimeStamp = ::ors::nowNanos();
+    ORS_LOG(INFO) << "------> " << tempTimeStamp << "|" << __FUNCTION__ << " end OrderRef" << pOrderAction->OrderRef << std::endl;
 }
 
 void ORSServer::OnErrRtnOrderInsert(CThostFtdcInputOrderField *pInputOrder, CThostFtdcRspInfoField *pRspInfo)
 {
-    tempTimeStamp = illuminati::ITime_ClockRT::GetCurrentTime();
-    ILOG(INFO) << "------> " << tempTimeStamp << "|" << __FUNCTION__ << " start OrderRef" << pInputOrder->OrderRef << std::endl;
+    tempTimeStamp = ::ors::nowNanos();
+    ORS_LOG(INFO) << "------> " << tempTimeStamp << "|" << __FUNCTION__ << " start OrderRef" << pInputOrder->OrderRef << std::endl;
     bool bRemoveOrder = false;
-    ILOG(INFO) << "--->>> " << tempTimeStamp << "|" << __FUNCTION__ << " OrderSysID : " << pInputOrder->OrderRef << " ErrorID : " << pRspInfo->ErrorID << " ErrorMsg : " << pRspInfo->ErrorMsg << std::endl;
+    ORS_LOG(INFO) << "--->>> " << tempTimeStamp << "|" << __FUNCTION__ << " OrderSysID : " << pInputOrder->OrderRef << " ErrorID : " << pRspInfo->ErrorID << " ErrorMsg : " << pRspInfo->ErrorMsg << std::endl;
     // Changed since error code 0 is also valid in this case
     // if(pRspInfo->ErrorID != 0)
     {
@@ -1470,23 +1473,23 @@ void ORSServer::OnErrRtnOrderInsert(CThostFtdcInputOrderField *pInputOrder, CTho
 
         strcpy(ordinfo.OrderSysID, pInputOrder->OrderRef);
         // switch(rms.getLastRequestOutgoingState (response))
-        tempTimeStamp = illuminati::ITime_ClockRT::GetCurrentTime();
+        tempTimeStamp = ::ors::nowNanos();
         switch (ordinfo.requestType)
         {
         case NEWORDER:
             response.Response_Type = ORDER_ERROR;
-            ILOG(INFO) << "--->>> " << tempTimeStamp << "|"
+            ORS_LOG(INFO) << "--->>> " << tempTimeStamp << "|"
                        << "New order error | " << ordinfo.ClientID << " | " << ordinfo.ScripCode << " | " << ordinfo.localID << " | " << ordinfo.exchID << " | " << ordinfo.Transaction_Type << " | " << ordinfo.Price << " | " << ordinfo.Qty << std::endl;
             bRemoveOrder = true;
             break;
         case CANCELORDER:
             response.Response_Type = CANCEL_ORDER_REJECT;
-            ILOG(INFO) << "--->>> " << tempTimeStamp << "|"
+            ORS_LOG(INFO) << "--->>> " << tempTimeStamp << "|"
                        << "Cancel reject | " << ordinfo.ClientID << " | " << ordinfo.ScripCode << " | " << ordinfo.localID << " | " << ordinfo.exchID << " | " << ordinfo.Transaction_Type << " | " << ordinfo.Price << " | " << ordinfo.Qty << std::endl;
             break;
         default:
             response.Response_Type = ORDER_ERROR;
-            ILOG(INFO) << "--->>> " << tempTimeStamp << "|"
+            ORS_LOG(INFO) << "--->>> " << tempTimeStamp << "|"
                        << "unknown Reject | " << ordinfo.ClientID << " | " << ordinfo.ScripCode << " | " << ordinfo.localID << " | " << ordinfo.exchID << " | " << ordinfo.Transaction_Type << " | " << ordinfo.Price << " | " << ordinfo.Qty << std::endl;
             bRemoveOrder = true;
             break;
@@ -1504,30 +1507,30 @@ void ORSServer::OnErrRtnOrderInsert(CThostFtdcInputOrderField *pInputOrder, CTho
             m_ordLocalMapLock.unlock();
         }
     }
-    tempTimeStamp = illuminati::ITime_ClockRT::GetCurrentTime();
-    ILOG(INFO) << "------> " << tempTimeStamp << "|" << __FUNCTION__ << " end OrderRef" << pInputOrder->OrderRef << std::endl;
+    tempTimeStamp = ::ors::nowNanos();
+    ORS_LOG(INFO) << "------> " << tempTimeStamp << "|" << __FUNCTION__ << " end OrderRef" << pInputOrder->OrderRef << std::endl;
 }
 
 void ORSServer::OnRtnOrder(CThostFtdcOrderField *pOrder, CThostFtdcRspInfoField *pRspInfo)
 {
-    tempTimeStamp = illuminati::ITime_ClockRT::GetCurrentTime();
-    ILOG(INFO) << "------> " << tempTimeStamp << "|" << __FUNCTION__ << " start OrderRef" << pOrder->OrderRef << __FUNCTION__ << "OrderSysID : " << pOrder->OrderSysID << " ErrorID : " << pRspInfo->ErrorID << " ErrorMsg : " << pRspInfo->ErrorMsg << std::endl;
+    tempTimeStamp = ::ors::nowNanos();
+    ORS_LOG(INFO) << "------> " << tempTimeStamp << "|" << __FUNCTION__ << " start OrderRef" << pOrder->OrderRef << __FUNCTION__ << "OrderSysID : " << pOrder->OrderSysID << " ErrorID : " << pRspInfo->ErrorID << " ErrorMsg : " << pRspInfo->ErrorMsg << std::endl;
     if (pRspInfo->ErrorID != 0 || pOrder->OrderSysID == NULL)
     {
-        tempTimeStamp = illuminati::ITime_ClockRT::GetCurrentTime();
-        ILOG(INFO) << "--->>> " << tempTimeStamp << "|"
+        tempTimeStamp = ::ors::nowNanos();
+        ORS_LOG(INFO) << "--->>> " << tempTimeStamp << "|"
                    << "Order error, errorcode=" << pRspInfo->ErrorID << " errormsg= " << pRspInfo->ErrorMsg << std::endl;
         pOrder->OrderSubmitStatus = THOST_FTDC_OSS_InsertRejected - '0';
     }
     OnRtnOrder(pOrder);
-    tempTimeStamp = illuminati::ITime_ClockRT::GetCurrentTime();
-    ILOG(INFO) << "------> " << tempTimeStamp << "|" << __FUNCTION__ << " end OrderRef" << pOrder->OrderRef << std::endl;
+    tempTimeStamp = ::ors::nowNanos();
+    ORS_LOG(INFO) << "------> " << tempTimeStamp << "|" << __FUNCTION__ << " end OrderRef" << pOrder->OrderRef << std::endl;
 }
 
 void ORSServer::OnRtnOrder(CThostFtdcOrderField *pOrder)
 {
-    tempTimeStamp = illuminati::ITime_ClockRT::GetCurrentTime();
-    ILOG(INFO) << "------> " << tempTimeStamp << "|" << __FUNCTION__ << " start OrderRef" << pOrder->OrderRef << std::endl;
+    tempTimeStamp = ::ors::nowNanos();
+    ORS_LOG(INFO) << "------> " << tempTimeStamp << "|" << __FUNCTION__ << " start OrderRef" << pOrder->OrderRef << std::endl;
     OrderInfo ordinfo;
     ResponseMsg response;
     bool bRemoveOrder = false;
@@ -1550,8 +1553,8 @@ void ORSServer::OnRtnOrder(CThostFtdcOrderField *pOrder)
         switch (pOrder->OrderStatus)
         {
         case THOST_FTDC_OST_AllTraded:
-            tempTimeStamp = illuminati::ITime_ClockRT::GetCurrentTime();
-            ILOG(INFO) << "--->>> " << tempTimeStamp << "|"
+            tempTimeStamp = ::ors::nowNanos();
+            ORS_LOG(INFO) << "--->>> " << tempTimeStamp << "|"
                        << "All traded | " << ordinfo.ClientID << " | " << ordinfo.ScripCode << " | " << ordinfo.localID << " | " << ordinfo.exchID << " | " << ordinfo.Transaction_Type << std::endl;
             // as trade might come late
             // bRemoveOrder = true;
@@ -1571,8 +1574,8 @@ void ORSServer::OnRtnOrder(CThostFtdcOrderField *pOrder)
             response.Quantity = pOrder->VolumeTotal;
             PushUpdate(&response);
             ordinfo.Qty = ordinfo.Qty - pOrder->VolumeTotal;
-            tempTimeStamp = illuminati::ITime_ClockRT::GetCurrentTime();
-            ILOG(INFO) << "--->>> " << tempTimeStamp << "|"
+            tempTimeStamp = ::ors::nowNanos();
+            ORS_LOG(INFO) << "--->>> " << tempTimeStamp << "|"
                        << "Cancel confirm | " << ordinfo.ClientID << " | " << ordinfo.ScripCode << " | " << ordinfo.localID << " | " << ordinfo.exchID << " | " << ordinfo.Transaction_Type << " | " << ordinfo.Price << " | " << ordinfo.Qty << " | " << response.Quantity << std::endl;
             if (ordinfo.Qty == 0)
             {
@@ -1580,15 +1583,15 @@ void ORSServer::OnRtnOrder(CThostFtdcOrderField *pOrder)
             }
             else
             {
-                tempTimeStamp = illuminati::ITime_ClockRT::GetCurrentTime();
-                ILOG(INFO) << "--->>> " << tempTimeStamp << "|"
+                tempTimeStamp = ::ors::nowNanos();
+                ORS_LOG(INFO) << "--->>> " << tempTimeStamp << "|"
                            << "Partial cancel condition triggered2" << std::endl;
             }
             break;
         case THOST_FTDC_OST_Unknown:
             ordinfo.Qty = pOrder->VolumeTotalOriginal;
-            tempTimeStamp = illuminati::ITime_ClockRT::GetCurrentTime();
-            ILOG(INFO) << "--->>> " << tempTimeStamp << "|"
+            tempTimeStamp = ::ors::nowNanos();
+            ORS_LOG(INFO) << "--->>> " << tempTimeStamp << "|"
                        << "Request submitted | " << ordinfo.ClientID << " | " << ordinfo.ScripCode << " | " << ordinfo.localID << " | " << ordinfo.exchID << " | " << ordinfo.Transaction_Type << " | " << ordinfo.Price << " | " << ordinfo.Qty << std::endl;
             break;
         /*
@@ -1598,10 +1601,10 @@ void ORSServer::OnRtnOrder(CThostFtdcOrderField *pOrder)
          break;
          */
         default:
-            tempTimeStamp = illuminati::ITime_ClockRT::GetCurrentTime();
-            ILOG(INFO) << "--->>> " << tempTimeStamp << "|"
+            tempTimeStamp = ::ors::nowNanos();
+            ORS_LOG(INFO) << "--->>> " << tempTimeStamp << "|"
                        << "LocalID | " << ordinfo.localID << " OrderSysID " << pOrder->OrderSysID << " OrderSubmitStatus " << pOrder->OrderSubmitStatus << " OrderStatus " << pOrder->OrderStatus << std::endl;
-            ILOG(INFO) << "--->>> " << tempTimeStamp << "|"
+            ORS_LOG(INFO) << "--->>> " << tempTimeStamp << "|"
                        << "unhandled order status | " << ordinfo.ClientID << " | " << ordinfo.ScripCode << " | " << ordinfo.localID << " | " << ordinfo.exchID << " | " << ordinfo.Transaction_Type << " | " << ordinfo.Price << " | " << ordinfo.Qty << std::endl;
             break;
         }
@@ -1610,8 +1613,8 @@ void ORSServer::OnRtnOrder(CThostFtdcOrderField *pOrder)
         switch (pOrder->OrderStatus)
         {
         case THOST_FTDC_OST_AllTraded:
-            tempTimeStamp = illuminati::ITime_ClockRT::GetCurrentTime();
-            ILOG(INFO) << "--->>> " << tempTimeStamp << "|"
+            tempTimeStamp = ::ors::nowNanos();
+            ORS_LOG(INFO) << "--->>> " << tempTimeStamp << "|"
                        << "All traded | " << ordinfo.ClientID << " | " << ordinfo.ScripCode << " | " << ordinfo.localID << " | " << ordinfo.exchID << " | " << ordinfo.Transaction_Type << " | " << ordinfo.Price << " | " << ordinfo.Qty << std::endl;
             // bRemoveOrder = true;
             break;
@@ -1622,8 +1625,8 @@ void ORSServer::OnRtnOrder(CThostFtdcOrderField *pOrder)
                 // ordinfo.Qty = pOrder->VolumeTotalOriginal;
                 response.Response_Type = NEW_ORDER_CONFIRM;
                 PushUpdate(&response);
-                tempTimeStamp = illuminati::ITime_ClockRT::GetCurrentTime();
-                ILOG(INFO) << "--->>> " << tempTimeStamp << "|"
+                tempTimeStamp = ::ors::nowNanos();
+                ORS_LOG(INFO) << "--->>> " << tempTimeStamp << "|"
                            << "New confirm | " << ordinfo.ClientID << " | " << ordinfo.ScripCode << " | " << ordinfo.localID << " | " << ordinfo.exchID << " | " << ordinfo.Transaction_Type << " | " << ordinfo.Price << " | " << ordinfo.Qty << std::endl;
                 ordinfo.orderSent = 0;
             }
@@ -1639,8 +1642,8 @@ void ORSServer::OnRtnOrder(CThostFtdcOrderField *pOrder)
             response.Quantity = pOrder->VolumeTotal;
             PushUpdate(&response);
             ordinfo.Qty = ordinfo.Qty - pOrder->VolumeTotal;
-            tempTimeStamp = illuminati::ITime_ClockRT::GetCurrentTime();
-            ILOG(INFO) << "--->>> " << tempTimeStamp << "|"
+            tempTimeStamp = ::ors::nowNanos();
+            ORS_LOG(INFO) << "--->>> " << tempTimeStamp << "|"
                        << "Cancel confirm | " << ordinfo.ClientID << " | " << ordinfo.ScripCode << " | " << ordinfo.localID << " | " << ordinfo.exchID << " | " << ordinfo.Transaction_Type << " | " << ordinfo.Price << " | " << ordinfo.Qty << std::endl;
             if (ordinfo.Qty == 0)
             {
@@ -1648,8 +1651,8 @@ void ORSServer::OnRtnOrder(CThostFtdcOrderField *pOrder)
             }
             else
             {
-                tempTimeStamp = illuminati::ITime_ClockRT::GetCurrentTime();
-                ILOG(INFO) << "--->>> " << tempTimeStamp << "|"
+                tempTimeStamp = ::ors::nowNanos();
+                ORS_LOG(INFO) << "--->>> " << tempTimeStamp << "|"
                            << "Partial cancel condition triggered" << std::endl;
             }
             break;
@@ -1662,10 +1665,10 @@ void ORSServer::OnRtnOrder(CThostFtdcOrderField *pOrder)
          break;
          */
         default:
-            tempTimeStamp = illuminati::ITime_ClockRT::GetCurrentTime();
-            ILOG(INFO) << "--->>> " << tempTimeStamp << "|"
+            tempTimeStamp = ::ors::nowNanos();
+            ORS_LOG(INFO) << "--->>> " << tempTimeStamp << "|"
                        << "LocalID | " << ordinfo.localID << " OrderSysID " << pOrder->OrderSysID << " OrderSubmitStatus " << pOrder->OrderSubmitStatus << " OrderStatus " << pOrder->OrderStatus << std::endl;
-            ILOG(INFO) << "--->>> " << tempTimeStamp << "|"
+            ORS_LOG(INFO) << "--->>> " << tempTimeStamp << "|"
                        << "unhandled order status " << ordinfo.ClientID << " | " << ordinfo.ScripCode << " | " << ordinfo.localID << " | " << ordinfo.exchID << " | " << ordinfo.Transaction_Type << " | " << ordinfo.Price << " | " << ordinfo.Qty << std::endl;
             break;
         }
@@ -1676,26 +1679,26 @@ void ORSServer::OnRtnOrder(CThostFtdcOrderField *pOrder)
         case NEWORDER:
             response.Response_Type = ORDER_ERROR;
             PushUpdate(&response);
-            tempTimeStamp = illuminati::ITime_ClockRT::GetCurrentTime();
-            ILOG(INFO) << "--->>> " << tempTimeStamp << "|"
+            tempTimeStamp = ::ors::nowNanos();
+            ORS_LOG(INFO) << "--->>> " << tempTimeStamp << "|"
                        << "New order error | " << ordinfo.ClientID << " | " << ordinfo.ScripCode << " | " << ordinfo.localID << " | " << ordinfo.exchID << " | " << ordinfo.Transaction_Type << " | " << ordinfo.Price << " | " << ordinfo.Qty << std::endl;
             bRemoveOrder = true;
             break;
         case CANCELORDER:
             response.Response_Type = CANCEL_ORDER_REJECT;
             PushUpdate(&response);
-            tempTimeStamp = illuminati::ITime_ClockRT::GetCurrentTime();
-            ILOG(INFO) << "--->>> " << tempTimeStamp << "|"
+            tempTimeStamp = ::ors::nowNanos();
+            ORS_LOG(INFO) << "--->>> " << tempTimeStamp << "|"
                        << "Cancel reject | " << ordinfo.ClientID << " | " << ordinfo.ScripCode << " | " << ordinfo.localID << " | " << ordinfo.exchID << " | " << ordinfo.Transaction_Type << " | " << ordinfo.Price << " | " << ordinfo.Qty << std::endl;
             break;
         default:
             // ordinfo.Qty = pOrder->VolumeTotalOriginal;
             response.Response_Type = ORDER_ERROR;
             PushUpdate(&response);
-            tempTimeStamp = illuminati::ITime_ClockRT::GetCurrentTime();
-            ILOG(INFO) << "--->>> " << tempTimeStamp << "|"
+            tempTimeStamp = ::ors::nowNanos();
+            ORS_LOG(INFO) << "--->>> " << tempTimeStamp << "|"
                        << "LocalID | " << ordinfo.localID << " OrderSysID " << pOrder->OrderSysID << " OrderSubmitStatus " << pOrder->OrderSubmitStatus << " OrderStatus " << pOrder->OrderStatus << std::endl;
-            ILOG(INFO) << "--->>> " << tempTimeStamp << "|"
+            ORS_LOG(INFO) << "--->>> " << tempTimeStamp << "|"
                        << "unknown Reject " << ordinfo.ClientID << " | " << ordinfo.ScripCode << " | " << ordinfo.localID << " | " << ordinfo.exchID << " | " << ordinfo.Transaction_Type << " | " << ordinfo.Price << " | " << ordinfo.Qty << std::endl;
             bRemoveOrder = true;
             break;
@@ -1710,10 +1713,10 @@ void ORSServer::OnRtnOrder(CThostFtdcOrderField *pOrder)
          * THOST_FTDC_OSS_ModifyRejected
          */
         // ordinfo.Qty = pOrder->VolumeTotalOriginal;
-        tempTimeStamp = illuminati::ITime_ClockRT::GetCurrentTime();
-        ILOG(INFO) << "--->>> " << tempTimeStamp << "|"
+        tempTimeStamp = ::ors::nowNanos();
+        ORS_LOG(INFO) << "--->>> " << tempTimeStamp << "|"
                    << "LocalID " << ordinfo.localID << " OrderSysID " << pOrder->OrderSysID << " OrderSubmitStatus " << pOrder->OrderSubmitStatus << " OrderStatus " << pOrder->OrderStatus << std::endl;
-        ILOG(INFO) << "--->>> " << tempTimeStamp << "|"
+        ORS_LOG(INFO) << "--->>> " << tempTimeStamp << "|"
                    << "unhandled status " << ordinfo.ClientID << " | " << ordinfo.ScripCode << " | " << ordinfo.localID << " | " << ordinfo.exchID << " | " << ordinfo.Transaction_Type << " | " << ordinfo.Price << " | " << ordinfo.Qty << std::endl;
         break;
     }
@@ -1732,15 +1735,15 @@ void ORSServer::OnRtnOrder(CThostFtdcOrderField *pOrder)
         m_ordLocalMapLock.unlock();
     }
     // UpdateRMS(res, ordinfo.ScripCode, ordinfo.ClientID, ordinfo.Transaction_Type);
-    tempTimeStamp = illuminati::ITime_ClockRT::GetCurrentTime();
-    ILOG(INFO) << "------> " << tempTimeStamp << "|" << __FUNCTION__ << " end OrderRef" << pOrder->OrderRef << std::endl;
+    tempTimeStamp = ::ors::nowNanos();
+    ORS_LOG(INFO) << "------> " << tempTimeStamp << "|" << __FUNCTION__ << " end OrderRef" << pOrder->OrderRef << std::endl;
 }
 
 
 void ORSServer::OnRtnTrade(CThostFtdcTradeField *pTrade)
 {
-    tempTimeStamp = illuminati::ITime_ClockRT::GetCurrentTime();
-//	ILOG(INFO) << "------> "<< tempTimeStamp << "|" << __FUNCTION__ << " start OrderRef " << pTrade->OrderRef << std::endl;
+    tempTimeStamp = ::ors::nowNanos();
+//	ORS_LOG(INFO) << "------> "<< tempTimeStamp << "|" << __FUNCTION__ << " start OrderRef " << pTrade->OrderRef << std::endl;
     OrderInfo ordinfo;
     ResponseMsg response;
 
@@ -1763,7 +1766,7 @@ void ORSServer::OnRtnTrade(CThostFtdcTradeField *pTrade)
     auto localID_it = m_ordExchMap.find(std::string(pTrade->OrderRef));
     if (localID_it == m_ordExchMap.end())
     {
-        ILOG(FATAL) << "OrderRef: " << pTrade->OrderRef << " not found in map\n";
+        ORS_LOG(FATAL) << "OrderRef: " << pTrade->OrderRef << " not found in map\n";
         m_ordExchMapLock.unlock();
         return;
     }
@@ -1792,8 +1795,8 @@ void ORSServer::OnRtnTrade(CThostFtdcTradeField *pTrade)
 
     ordinfo.orderSent = 0;
 
-    tempTimeStamp = illuminati::ITime_ClockRT::GetCurrentTime();
-    ILOG(INFO) << "--->>> " << tempTimeStamp << "|"
+    tempTimeStamp = ::ors::nowNanos();
+    ORS_LOG(INFO) << "--->>> " << tempTimeStamp << "|"
                << "Trade | " << ordinfo.ClientID << " | " << ordinfo.ScripCode << " | " << ordinfo.localID << " | " << ordinfo.exchID << " | " << ordinfo.Transaction_Type << " | " << pTrade->Price << " | " << pTrade->Volume << " | " << ordinfo.openQty << std::endl;
 
     // UpdateRMS(res, ordinfo.ScripCode, ordinfo.ClientID, ordinfo.Transaction_Type);
@@ -1801,8 +1804,8 @@ void ORSServer::OnRtnTrade(CThostFtdcTradeField *pTrade)
     // Now this should be done by order response only
     if (ordinfo.openQty > 0)
     {
-        tempTimeStamp = illuminati::ITime_ClockRT::GetCurrentTime();
-        ILOG(INFO) << "--->>> " << tempTimeStamp << "|"
+        tempTimeStamp = ::ors::nowNanos();
+        ORS_LOG(INFO) << "--->>> " << tempTimeStamp << "|"
                    << "Partially traded" << std::endl;
         // m_ordLocalMap[response.OrderID] = ordinfo;
         // m_ordExchMap[std::string(ordinfo.exchID)] = ordinfo;
@@ -1811,13 +1814,13 @@ void ORSServer::OnRtnTrade(CThostFtdcTradeField *pTrade)
     {
         RemoveFromMap(ordinfo.exchID, response.OrderID);
     }
-    tempTimeStamp = illuminati::ITime_ClockRT::GetCurrentTime();
-    ILOG(INFO) << "------> " << tempTimeStamp << "|" << __FUNCTION__ << " end OrderRef " << pTrade->OrderRef << std::endl;
+    tempTimeStamp = ::ors::nowNanos();
+    ORS_LOG(INFO) << "------> " << tempTimeStamp << "|" << __FUNCTION__ << " end OrderRef " << pTrade->OrderRef << std::endl;
 }
 
 void ORSServer::installSignals()
 {
-    ILOG(INFO) << "Installing signals\n";
+    ORS_LOG(INFO) << "Installing signals\n";
     sigfillset(&m_signalSet);
     sigaddset(&m_signalSet, SIGUSR1);
     sigaddset(&m_signalSet, SIGUSR2);
@@ -1826,7 +1829,7 @@ void ORSServer::installSignals()
     sigaddset(&m_signalSet, SIGTERM);
     if (pthread_sigmask(SIG_BLOCK, &m_signalSet, NULL) != 0)
     {
-        ILOG(FATAL) << "sigmask error: " << strerror(errno) << std::endl;
+        ORS_LOG(FATAL) << "sigmask error: " << strerror(errno) << std::endl;
         throw("sigmask error");
     }
 }
@@ -1834,48 +1837,46 @@ void ORSServer::installSignals()
 void ORSServer::HandleSignals()
 {
 
-    illuminati::sysinfo::ProcessSettings ps;
-
     int32_t sig = 0;
     while (true)
     {
-        ILOG(INFO) << "Signal handler thread sleeping\n";
+        ORS_LOG(INFO) << "Signal handler thread sleeping\n";
         if (sigwait(&m_signalSet, &sig) != 0)
         {
-            ILOG(FATAL) << "Sigwait error " << std::endl;
+            ORS_LOG(FATAL) << "Sigwait error " << std::endl;
         }
 
         switch (sig)
         {
         case SIGTSTP: // ctrl+z
         {
-            ILOG(INFO) << "Attempting ORS normal exit." << std::endl;
-            ILOG(INFO) << "Shutting down the SHM manager \n";
+            ORS_LOG(INFO) << "Attempting ORS normal exit." << std::endl;
+            ORS_LOG(INFO) << "Shutting down the SHM manager \n";
             Stop();
             break;
         }
         case SIGTERM: // default by kill command
         {
-            ILOG(INFO) << "Attempting ORS normal exit." << std::endl;
-            ILOG(INFO) << "Shutting down the SHM manager \n";
+            ORS_LOG(INFO) << "Attempting ORS normal exit." << std::endl;
+            ORS_LOG(INFO) << "Shutting down the SHM manager \n";
             Stop();
             break;
         }
         case SIGINT: // ctrl+c
         {
-            ILOG(INFO) << "ORS  exiting." << std::endl;
+            ORS_LOG(INFO) << "ORS  exiting." << std::endl;
             Stop();
             break;
         }
         case SIGUSR1:
         {
-            ILOG(INFO) << "Resetting RMS state." << std::endl;
+            ORS_LOG(INFO) << "Resetting RMS state." << std::endl;
             rms.reset();
             break;
         }
         case SIGUSR2:
         {
-            ILOG(INFO) << "Fetch positions " << std::endl;
+            ORS_LOG(INFO) << "Fetch positions " << std::endl;
             ReqQryPosition();
             break;
         }
@@ -1883,7 +1884,7 @@ void ORSServer::HandleSignals()
         default:
         {
 
-            ILOG(INFO) << "Received Unhandled signal: " << sig << std::endl;
+            ORS_LOG(INFO) << "Received Unhandled signal: " << sig << std::endl;
         }
         }
     }

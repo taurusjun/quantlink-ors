@@ -12,7 +12,7 @@
 #include <map>
 #include <vector>
 
-#include "caslock.h"
+#include <mutex>
 #include "MDHandler.h"
 #include "orderresponse.h"
 #include "marketupdateNew.h"
@@ -117,7 +117,7 @@ public:
     SymbolMap m_symbolMap;
     OrderAccountMap m_ordLocalMap;
     OrderAccountMap2 m_ordExchMap;
-    illuminati::ds::CasLock m_ordExchMapLock;
+    std::mutex m_ordExchMapLock;
     volatile bool m_connected;
     bool m_logReqResp;
     std::thread m_reqrespLogger;
@@ -173,7 +173,7 @@ private:
     inline __attribute__((always_inline)) bool GetOrderInfo(const char *orderref, OrderInfo &orderinfo);
 
     void SetCombOffsetFlag(CThostFtdcInputOrderField &req, RequestMsg *request, char &flag, int &orderType);
-    illuminati::ds::CasLock m_ordLocalMapLock;
+    std::mutex m_ordLocalMapLock;
     void registerStats();
     inline __attribute__((always_inline)) void SendNewOrder(RequestMsg *);
     inline __attribute__((always_inline)) void SendModifyOrder(RequestMsg *);

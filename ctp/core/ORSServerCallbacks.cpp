@@ -1,4 +1,7 @@
 #include "ORSServer.h"
+#include "log/Log.h"
+#include "log/Metrics.h"
+#include "core/Time.h"
 
 #include <cstdlib>
 
@@ -15,7 +18,7 @@ void ORSServer::OnRspAuthenticate(CThostFtdcRspAuthenticateField *,
 
 void ORSServer::OnFrontDisconnected(int nReason) {
   m_connected = false;
-  ILOG(INFO) << "Front disconnected: " << nReason << std::endl;
+  ORS_LOG(INFO) << "Front disconnected: " << nReason << std::endl;
 }
 
 void ORSServer::OnRspError(CThostFtdcRspInfoField *pRspInfo, int, bool) {
@@ -23,13 +26,13 @@ void ORSServer::OnRspError(CThostFtdcRspInfoField *pRspInfo, int, bool) {
 }
 
 void ORSServer::OnHeartBeatWarning(int nTimeLapse) {
-  ILOG(INFO) << "Heartbeat warning: " << nTimeLapse << std::endl;
+  ORS_LOG(INFO) << "Heartbeat warning: " << nTimeLapse << std::endl;
 }
 
 bool ORSServer::IsErrorRspInfo(CThostFtdcRspInfoField *pRspInfo) {
   const bool failed = pRspInfo != nullptr && pRspInfo->ErrorID != 0;
   if (failed) {
-    ILOG(INFO) << "CTP error " << pRspInfo->ErrorID << ": "
+    ORS_LOG(INFO) << "CTP error " << pRspInfo->ErrorID << ": "
                << pRspInfo->ErrorMsg << std::endl;
   }
   return failed;
@@ -39,7 +42,7 @@ void ORSServer::OnRspUserLogin(CThostFtdcRspUserLoginField *pRspUserLogin,
                                CThostFtdcRspInfoField *pRspInfo, int,
                                bool bIsLast) {
   if (!bIsLast || IsErrorRspInfo(pRspInfo)) {
-    ILOG(INFO) << "Trader login failed" << std::endl;
+    ORS_LOG(INFO) << "Trader login failed" << std::endl;
     return;
   }
 

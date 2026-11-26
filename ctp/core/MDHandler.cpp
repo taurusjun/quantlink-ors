@@ -5,6 +5,8 @@
 #include "time.h"
 
 #include "MDHandler.h"
+#include "log/Log.h"
+#include "log/Metrics.h"
 #include "statsrecorder.h"
 
 using namespace std;
@@ -23,8 +25,8 @@ MDHandler::~MDHandler() = default;
 
 MDHandler::MDHandler(::ors::MarketDataSink& sink)
     : m_seqNum(0), sink_(sink) {
-    OB_CHECK = StatsRecorder::registerNewStat("OB_CHECK", 2000, 5000);
-    OB_SHMWRITE = StatsRecorder::registerNewStat("OB_SHMWRITE", 2000, 5000);
+    OB_CHECK = ::ors::metrics().registerStat("OB_CHECK", 2000, 5000);
+    OB_SHMWRITE = ::ors::metrics().registerStat("OB_SHMWRITE", 2000, 5000);
 }
 
 void MDHandler::ProcessMDUpdate(char *msg)
@@ -65,5 +67,5 @@ void MDHandler::ProcessMDUpdate(char *msg)
     update->m_seqnum = ++m_seqNum;
     sink_.send(*update);
     endTime = getcurtime();
-    StatsRecorder::record(OB_SHMWRITE, (endTime - startTime));
+    ::ors::metrics().record(OB_SHMWRITE, (endTime - startTime));
 }

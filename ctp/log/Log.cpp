@@ -43,4 +43,26 @@ void metrics(const base::Metrics& metrics) {
   base::logMetrics(*g_logger, metrics);
 }
 
+LegacyLine::LegacyLine(Level level, std::string event)
+    : level_(level), event_(std::move(event)) {}
+
+LegacyLine::~LegacyLine() {
+  if (!g_logger) {
+    return;
+  }
+  const auto converted = level_ == Level::FATAL
+                             ? spdlog::level::critical
+                             : level_ == Level::ERROR
+                                   ? spdlog::level::err
+                                   : level_ == Level::WARN
+                                         ? spdlog::level::warn
+                                         : spdlog::level::info;
+  base::logEvent(*g_logger, converted, event_,
+                 {LogField("message", stream_.str())});
+}
+
+LegacyLine line(Level level, std::string event) {
+  return LegacyLine(level, std::move(event));
+}
+
 }  // namespace ors::log
