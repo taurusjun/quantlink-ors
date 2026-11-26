@@ -64,5 +64,47 @@ int main() {
     std::cerr << "cancel reject did not keep the original order\n";
     return 1;
   }
+
+  CThostFtdcOrderField stale{};
+  std::strcpy(stale.OrderRef, "000000000001");
+  stale.FrontID = 99;
+  stale.SessionID = 99;
+  stale.OrderSubmitStatus = THOST_FTDC_OSS_Accepted;
+  stale.OrderStatus = THOST_FTDC_OST_NoTradeQueueing;
+  const std::size_t before = transport.responseCount();
+  server.OnRtnOrder(&stale);
+  if (transport.responseCount() != before) {
+    std::cerr << "stale front/session report was not ignored\n";
+    return 1;
+  }
+
+  CThostFtdcTradeField trade{};
+  std::strcpy(trade.OrderRef, "000000000001");
+  std::strcpy(trade.OrderSysID, "12345");
+  trade.Volume = 1;
+  trade.Price = 725.0;
+  const std::size_t beforeTrade = transport.responseCount();
+  server.OnRtnTrade(&trade);
+  if (transport.responseCount() != beforeTrade + 1 ||
+      transport.responses().back().Response_Type !=
+          illuminati::infra::TRADE_CONFIRM) {
+    std::cerr << "trade confirm was not emitted\n";
+    return 1;
+  }
+
+  illuminati::infra::RequestMsg preRms{};
+  preRms.Request_Type = illuminati::infra::NEWORDER;
+  preRms.OrderID = 1001;
+  preRms.Quantity = 1;
+  preRms.Price = 725.0;
+  std::strcpy(preRms.AccountID, "142266");
+  std::strcpy(preRms.Contract_Description.Symbol, "au2612");
+  const std::size_t beforePreRms = transport.responseCount();
+  server.ProcessRequest(&preRms);
+  if (transport.responseCount() != beforePreRms + 1 ||
+      transport.responses().back().Response_Type != illuminati::infra::ORS_REJECT) {
+    std::cerr << "order before RMS ready was not rejected\n";
+    return 1;
+  }
   return 0;
 }

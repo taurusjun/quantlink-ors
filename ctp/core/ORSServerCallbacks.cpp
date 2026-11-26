@@ -55,5 +55,6 @@ void ORSServer::OnRspUserLogin(CThostFtdcRspUserLoginField *pRspUserLogin,
 
   ReqSettlementInfoConfirm();
   rms.initRmsImpl(m_maxClients, m_rmsConfigFile, m_rmsFirmwideConfigFile, "");
+  rmsReady_ = true;
   m_logonResp = true;
 }

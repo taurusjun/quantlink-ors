@@ -366,6 +366,10 @@ void ORSServer::ProcessRequest(RequestMsg *req)
         RejectOrder(req, "ClientRegister required");
         return;
     }
+    if (!rmsReady_) {
+        RejectOrder(req, "RMS not ready");
+        return;
+    }
     switch (req->Request_Type)
     {
     case NEWORDER:
@@ -613,6 +617,8 @@ void ORSServer::SendNewOrder(RequestMsg *request)
     ordinfo.openQty = request->Quantity;
     ordinfo.exchange = request->Exchange_Type;
     ordinfo.sendTime = endtime;
+    ordinfo.frontId = FRONT_ID;
+    ordinfo.sessionId = SESSION_ID;
     ordinfo.qtyType = iOrderType;
 
     m_ordLocalMapLock.lock();
@@ -813,7 +819,9 @@ void ORSServer::PushUpdate(ResponseMsg *resp)
     }
 
     // update RMS here
-    rms.handleORSResponse(resp);
+    if (rmsReady_) {
+        rms.handleORSResponse(resp);
+    }
 
     // to update Position map
     //
@@ -1313,6 +1321,10 @@ void ORSServer::OnRspOrderAction(CThostFtdcOrderActionField *pOrderAction, CThos
     if (!GetOrderInfo(pOrderAction->OrderRef, order)) {
         return;
     }
+    if (pOrderAction->FrontID != order.frontId ||
+        pOrderAction->SessionID != order.sessionId) {
+        return;
+    }
 
     ResponseMsg response;
     response.Response_Type = CANCEL_ORDER_REJECT;
@@ -1537,6 +1549,10 @@ void ORSServer::OnRtnOrder(CThostFtdcOrderField *pOrder)
 
     if (!(GetOrderInfo(pOrder->OrderRef, ordinfo)))
     {
+        return;
+    }
+    if (pOrder->FrontID != ordinfo.frontId ||
+        pOrder->SessionID != ordinfo.sessionId) {
         return;
     }
 
@@ -1778,6 +1794,8 @@ void ORSServer::OnRtnTrade(CThostFtdcTradeField *pTrade)
 
     m_ordLocalMapLock.lock();
     ordinfo = m_ordLocalMap[oid];
+    m_ordLocalMapLock.unlock();
+    m_ordLocalMapLock.lock();
     ordinfo.Qty = ordinfo.Qty - pTrade->Volume;
     ordinfo.openQty = ordinfo.Qty;
     m_ordLocalMap[oid] = ordinfo;

@@ -81,6 +81,8 @@ typedef struct _orderInfo
     // to keep track if the order is completely traded or open
     unsigned long openQty;
     uint64_t sendTime;
+    int frontId;
+    int sessionId;
     char exchange;
     int qtyType; // is this open or close or closeyesterday
 } OrderInfo;
@@ -204,6 +206,7 @@ private:
     ::ors::AccountQueryState accountQueryState_;
     std::thread accountQueryTimer_;
     bool clientRegistered_{false};
+    bool rmsReady_{false};
     std::vector<::ors::PositionRow> pendingPositionRows_;
 
     std::string m_rmsConfigFile;
