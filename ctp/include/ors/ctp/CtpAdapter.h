@@ -185,9 +185,8 @@ class OrderSender {
  * One adapter per TraderApi session: it registers itself as the session's order
  * SPI, so it must be destroyed before the session (or detached, which the
  * destructor does). Requests before READY are rejected with an OrderUpdate
- * instead of being dropped. Reports whose CTP OrderRef is not known are kept in
- * pendingUpdates()/pendingTrades() with orderRef 0 for downstream recovery
- * instead of being thrown away.
+ * instead of being dropped. A report for an OrderRef this adapter never issued
+ * is dropped; there is no order-query/reconciliation path in ORS.
  *
  * ModifyRequest is rejected: CTP `ReqOrderAction` only supports Delete.
  */
@@ -226,10 +225,6 @@ class CtpAdapter {
 
   /// Execution stream sequence of this adapter (OrderUpdate and Trade share it).
   std::uint64_t sequence() const;
-
-  /// Reports CTP sent for an OrderRef this adapter never issued, oldest first.
-  std::vector<OrderUpdate> pendingUpdates() const;
-  std::vector<Trade> pendingTrades() const;
 
   /// CTP SPI entry points, called by the session's forwarding SPI. Public so
   /// the offline test can feed rows without a session.

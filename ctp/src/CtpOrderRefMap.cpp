@@ -57,4 +57,13 @@ void CtpOrderRefMap::clear() {
   byCtpRef_.clear();
 }
 
+void CtpOrderRefMap::erase(std::uint64_t orderRef) {
+  const auto found = byOrderRef_.find(orderRef);
+  if (found == byOrderRef_.end()) {
+    return;
+  }
+  byCtpRef_.erase(found->second.ctpRef);
+  byOrderRef_.erase(found);
+}
+
 }  // namespace ors::ctp

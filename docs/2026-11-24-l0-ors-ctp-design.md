@@ -468,7 +468,19 @@ sequence
 sourceSessionId / sourcePublicationEpoch
 ```
 
-未知 orderRef 不丢弃：进入 reconciliation buffer，等待查询或后续回报。
+未知 orderRef 不再进入 pending/reconciliation buffer。ORS 不做订单查询，也没有消费者；
+按公司 ORS 的行为，未知回报直接丢弃并记录错误，避免无界内存和 sequence gap。
+
+终态订单按公司 ORS 的 `RemoveFromMap` 语义处理：
+
+```text
+InsertRejected / Rejected
+Canceled
+成交累计量达到 orderQty -> Filled
+```
+
+发布终态 OrderUpdate（以及成交 Trade）后，立即从 `orders_` 和 live OrderRef 映射删除；
+不保留 tombstone，不在日内复用 orderRef。`orderRef` 的唯一性由 L2 保证。
 
 撤单拒绝：
 

@@ -215,10 +215,9 @@ struct CtpAdapter::Impl {
 
     CThostFtdcInputOrderField ctp;
     fillInsert(request, ctpRef, ctp);
-    if (sender_.insert(ctp, session_.nextRequestId()) != 0) {
-      return reject(request, sender_.lastError());
-    }
 
+    // Install the live state before the CTP send. A very fast trade callback
+    // must not arrive between registerRef() and the state insertion.
     OrderState state;
     state.ctpRef = ctpRef;
     state.instrumentId = request.instrumentId;
@@ -231,6 +230,12 @@ struct CtpAdapter::Impl {
     {
       std::lock_guard<std::mutex> lock(mutex_);
       orders_[request.orderRef] = state;
+    }
+
+    if (sender_.insert(ctp, session_.nextRequestId()) != 0) {
+      const bool rejected = reject(request, sender_.lastError());
+      eraseOrder(request.orderRef);
+      return rejected;
     }
 
     // Accepted by the CTP front; the exchange acknowledgement follows on
@@ -332,8 +337,6 @@ struct CtpAdapter::Impl {
     }
     orders_.clear();
     refs_.clear();
-    pendingUpdates_.clear();
-    pendingTrades_.clear();
     trackingTradingDay_ = tradingDay;
   }
 
@@ -347,16 +350,6 @@ struct CtpAdapter::Impl {
     return sequence_;
   }
 
-  std::vector<OrderUpdate> pendingUpdates() const {
-    std::lock_guard<std::mutex> lock(mutex_);
-    return pendingUpdates_;
-  }
-
-  std::vector<Trade> pendingTrades() const {
-    std::lock_guard<std::mutex> lock(mutex_);
-    return pendingTrades_;
-  }
-
   /// CTP rejected the insert request itself (bad price, no margin, closed
   /// market, ...). The request was logged as NEW by onOrderRequest, so this
   /// turns it into REJECTED with the venue's reason.
@@ -368,7 +361,10 @@ struct CtpAdapter::Impl {
     resetTradingDay(session_.tradingDay());
     const SessionIdentity current = currentIdentity();
     const std::uint64_t orderRef = resolve(text(order->OrderRef), 0, 0);
-    if (orderRef != 0) {
+    if (orderRef == 0) {
+      return;
+    }
+    {
       const OrderState state = stateOf(orderRef);
       if (!sameSession(current, state.frontId, state.sessionId)) {
         return;
@@ -385,12 +381,9 @@ struct CtpAdapter::Impl {
     update.reason = gbkToUtf8(text(info->ErrorMsg));
     update.errorCode = info->ErrorID;
     update.tradingDay = session_.tradingDay();
-    if (orderRef == 0) {
-      bufferUpdate(update);
-      return;
-    }
     markRejected(orderRef);
     publish(update);
+    eraseOrder(orderRef);
   }
 
   /// CTP accepted the cancel request on the wire; the result of the cancel
@@ -408,7 +401,6 @@ struct CtpAdapter::Impl {
       return;
     }
     if (orderRef == 0) {
-      bufferCancelReject(text(action->ExchangeID), info);
       return;
     }
     OrderState state = stateOf(orderRef);
@@ -428,7 +420,6 @@ struct CtpAdapter::Impl {
       return;
     }
     if (orderRef == 0) {
-      bufferCancelReject(text(action->ExchangeID), info);
       return;
     }
     OrderState state = stateOf(orderRef);
@@ -449,19 +440,6 @@ struct CtpAdapter::Impl {
     }
     const std::uint64_t orderRef = resolve(ctpRef, frontId, sessionId);
     if (orderRef == 0) {
-      OrderUpdate update;
-      update.status = mapOrderStatus(order->OrderStatus);
-      update.exchangeOrderId = trimAsciiSpace(text(order->OrderSysID));
-      update.exchange = text(order->ExchangeID);
-      update.side = mapSide(order->Direction);
-      update.offsetFlag = mapOffset(order->CombOffsetFlag[0]);
-      update.orderQty = order->VolumeTotalOriginal;
-      update.filledQty = order->VolumeTraded;
-      update.remainingQty = order->VolumeTotal;
-      update.price = sanitizePrice(order->LimitPrice);
-      update.reason = gbkToUtf8(text(order->StatusMsg));
-      update.tradingDay = text(order->TradingDay);
-      bufferUpdate(update);
       return;
     }
     bindRef(orderRef, frontId, sessionId);
@@ -475,6 +453,7 @@ struct CtpAdapter::Impl {
     const double limitPrice = sanitizePrice(order->LimitPrice);
     const OrderStatus mapped = mapOrderStatus(order->OrderStatus);
 
+    bool eraseAfterPublish = false;
     OrderUpdate update;
     {
       std::lock_guard<std::mutex> lock(mutex_);
@@ -555,8 +534,12 @@ struct CtpAdapter::Impl {
       if (!tradingDay.empty()) {
         update.tradingDay = tradingDay;
       }
+      eraseAfterPublish = state.terminal;
     }
     publish(update);
+    if (eraseAfterPublish) {
+      eraseOrder(orderRef);
+    }
   }
 
   // CTP's private trade callback is treated as at-most-once: this adapter has
@@ -585,16 +568,15 @@ struct CtpAdapter::Impl {
     report.qty = trade->Volume;
     report.tradingDay = text(trade->TradingDay);
     if (orderRef == 0) {
-      bufferTrade(report);
       return;
     }
     bool publishUpdate = false;
-    bool knownOrder = true;
+    bool eraseAfterPublish = false;
     {
       std::lock_guard<std::mutex> lock(mutex_);
       const auto found = orders_.find(orderRef);
       if (found == orders_.end()) {
-        knownOrder = false;
+        return;
       } else {
         OrderState& state = found->second;
         if (!sameSession(current, state.frontId, state.sessionId)) {
@@ -616,11 +598,8 @@ struct CtpAdapter::Impl {
           }
           publishUpdate = true;
         }
+        eraseAfterPublish = state.terminal;
       }
-    }
-    if (!knownOrder) {
-      bufferTrade(report);
-      return;
     }
 
     // Trade first, then the order status; FILLED must not arrive before Trade.
@@ -630,6 +609,9 @@ struct CtpAdapter::Impl {
       OrderUpdate update = fromState(orderRef, state);
       update.cancelState = state.cancelRequested ? CancelState::Requested : CancelState::None;
       publish(update);
+    }
+    if (eraseAfterPublish) {
+      eraseOrder(orderRef);
     }
   }
 
@@ -814,22 +796,11 @@ struct CtpAdapter::Impl {
     return false;
   }
 
-  /// A cancel for an order this adapter never sent: no venue identity, so it
-  /// joins the reconciliation buffer instead of being reported as an order.
-  bool rejectUnknownCancel(const CancelRequest& request) {
-    {
-      std::lock_guard<std::mutex> lock(mutex_);
-      lastError_ = "unknown orderRef";
-    }
-    OrderUpdate update;
-    update.orderRef = request.orderRef;
-    update.status = OrderStatus::Rejected;
-    update.cancelState = CancelState::Rejected;
-    update.exchange = request.exchange;
-    update.requestId = request.requestId;
-    update.reason = "unknown orderRef";
-    update.tradingDay = session_.tradingDay();
-    bufferUpdate(update);
+  /// A cancel for an order this adapter never sent is dropped. There is no
+  /// order query/reconciliation path to consume a pending cancel.
+  bool rejectUnknownCancel(const CancelRequest&) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    lastError_ = "unknown orderRef";
     return false;
   }
 
@@ -846,6 +817,12 @@ struct CtpAdapter::Impl {
     std::lock_guard<std::mutex> lock(mutex_);
     const auto found = orders_.find(orderRef);
     return found == orders_.end() ? OrderState{} : found->second;
+  }
+
+  void eraseOrder(std::uint64_t orderRef) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    orders_.erase(orderRef);
+    refs_.erase(orderRef);
   }
 
   std::string registerRef(std::uint64_t orderRef) {
@@ -891,35 +868,6 @@ struct CtpAdapter::Impl {
     }
   }
 
-  void bufferUpdate(OrderUpdate update) {
-    std::lock_guard<std::mutex> lock(mutex_);
-    update.sequence = ++sequence_;
-    update.ingestTimestamp = epochNanos();
-    update.accountId = session_.config().investorId;
-    pendingUpdates_.push_back(std::move(update));
-  }
-
-  /// A cancel rejection whose orderRef this adapter cannot resolve.
-  void bufferCancelReject(const std::string& exchange,
-                          const CThostFtdcRspInfoField* info) {
-    OrderUpdate update;
-    update.status = OrderStatus::Rejected;
-    update.cancelState = CancelState::Rejected;
-    update.exchange = exchange;
-    update.reason = gbkToUtf8(text(info->ErrorMsg));
-    update.errorCode = info->ErrorID;
-    update.tradingDay = session_.tradingDay();
-    bufferUpdate(update);
-  }
-
-  void bufferTrade(Trade report) {
-    std::lock_guard<std::mutex> lock(mutex_);
-    report.sequence = ++sequence_;
-    report.ingestTimestamp = epochNanos();
-    report.accountId = session_.config().investorId;
-    pendingTrades_.push_back(std::move(report));
-  }
-
   struct Spi final : CThostFtdcTraderSpi {
     explicit Spi(Impl& owner) : owner_(owner) {}
 
@@ -958,8 +906,6 @@ struct CtpAdapter::Impl {
   CtpOrderRefMap refs_;
   std::unordered_map<std::uint64_t, OrderState> orders_;
   std::string trackingTradingDay_;
-  std::vector<OrderUpdate> pendingUpdates_;
-  std::vector<Trade> pendingTrades_;
   std::uint64_t sequence_{0};
   ExecutionSink* sink_{nullptr};
   std::string lastError_;
@@ -1007,12 +953,6 @@ void CtpAdapter::resetTradingDay(const std::string& tradingDay) {
 std::string CtpAdapter::lastError() const { return impl_->lastError(); }
 
 std::uint64_t CtpAdapter::sequence() const { return impl_->sequence(); }
-
-std::vector<OrderUpdate> CtpAdapter::pendingUpdates() const {
-  return impl_->pendingUpdates();
-}
-
-std::vector<Trade> CtpAdapter::pendingTrades() const { return impl_->pendingTrades(); }
 
 void CtpAdapter::OnRspOrderInsert(CThostFtdcInputOrderField* order,
                                   CThostFtdcRspInfoField* info) {

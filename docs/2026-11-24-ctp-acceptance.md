@@ -173,6 +173,11 @@ RED:   5 assertions failed (login count/order/stop-after-failure)
 GREEN: login exactly once -> cancel -> fill -> query
 ```
 
+Terminal live state follows company ORS `RemoveFromMap` semantics: after a
+Canceled/Rejected/Filled terminal update is published, the live `orders_` and
+OrderRef mapping are erased. There is no tombstone and no pending buffer; unknown
+reports are dropped. L2 guarantees unique orderRefs.
+
 ## 6. L1 runtime wiring (CTP ORS -> FastTrade AccessClient)
 
 Implemented:

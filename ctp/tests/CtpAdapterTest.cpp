@@ -499,16 +499,11 @@ void checkSenderFailure() {
   check(fixture.recorder.last().errorCode == 0, "a local rejection has no CTP error id");
 }
 
-void checkUnknownReportsAreBuffered() {
+void checkUnknownReportsDropped() {
   Fixture fixture;
   auto stranger = orderRow("999", 1, 2, THOST_FTDC_OST_NoTradeQueueing, 0, 1);
   fixture.adapter.OnRtnOrder(&stranger);
-  check(fixture.recorder.updates.empty(), "an unknown report is not published");
-  check(fixture.adapter.pendingUpdates().size() == 1, "an unknown report is buffered");
-  check(fixture.adapter.pendingUpdates().front().orderRef == 0,
-        "a buffered report has no contract orderRef");
-  check(fixture.adapter.pendingUpdates().front().status == OrderStatus::Ack,
-        "the buffered report keeps the venue status");
+  check(fixture.recorder.updates.empty(), "an unknown order report is dropped");
 
   auto tradeRow = zeroed<CThostFtdcTradeField>();
   setText(tradeRow.OrderRef, "999");
@@ -520,13 +515,11 @@ void checkUnknownReportsAreBuffered() {
   tradeRow.Price = 500.0;
   tradeRow.Volume = 1;
   fixture.adapter.OnRtnTrade(&tradeRow);
-  check(fixture.recorder.trades.empty(), "an unknown trade is not published");
-  check(fixture.adapter.pendingTrades().size() == 1, "an unknown trade is buffered");
+  check(fixture.recorder.trades.empty(), "an unknown trade is dropped");
 
   check(!fixture.adapter.onCancelRequest(cancelFor(555)),
         "a cancel for an order this adapter never sent is refused");
-  check(fixture.adapter.pendingUpdates().size() == 2,
-        "the unknown cancel joins the reconciliation buffer");
+  check(fixture.recorder.updates.empty(), "the unknown cancel publishes nothing");
   check(fixture.sender.cancels == 0, "an unknown cancel sends nothing");
 }
 
@@ -640,9 +633,23 @@ void checkTradingDayResetsOrderState() {
   fixture.adapter.OnRtnOrder(&canceled);
 
   fixture.adapter.resetTradingDay("20261125");
-  check(fixture.adapter.onOrderRequest(baseRequest(7)),
-        "an old-day orderRef can be reused after the trading day changes");
+  check(fixture.adapter.onOrderRequest(baseRequest(8)),
+        "the new trading day accepts a new orderRef");
   check(fixture.sender.inserts == 2, "the new-day order reaches CTP");
+}
+
+void checkTerminalOrderRemovedFromLiveMap() {
+  Fixture fixture;
+  check(fixture.adapter.onOrderRequest(baseRequest(7)), "the order is accepted");
+  auto ack = orderRow("7", 3, 400, THOST_FTDC_OST_NoTradeQueueing, 0, 2);
+  fixture.adapter.OnRtnOrder(&ack);
+  auto canceled = orderRow("7", 3, 400, THOST_FTDC_OST_Canceled, 0, 2);
+  fixture.adapter.OnRtnOrder(&canceled);
+
+  check(!fixture.adapter.onCancelRequest(cancelFor(7)),
+        "a terminal order has no live cancel route");
+  check(fixture.adapter.lastError().find("unknown orderRef") != std::string::npos,
+        "terminal order was removed from the live map");
 }
 
 void checkTradeAndAveragePrice() {
@@ -718,12 +725,13 @@ int main() {
   checkExchangeRejectInsert();
   checkDuplicateAndRange();
   checkSenderFailure();
-  checkUnknownReportsAreBuffered();
+  checkUnknownReportsDropped();
   checkModifyRejected();
   checkTradeExchangeFallback();
   checkOldSessionReportsDropped();
   checkPaddedVenueIdsTrimmed();
   checkTradingDayResetsOrderState();
+  checkTerminalOrderRemovedFromLiveMap();
   checkTradeAndAveragePrice();
 
   if (failures != 0) {

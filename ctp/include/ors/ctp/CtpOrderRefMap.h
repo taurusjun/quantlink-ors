@@ -45,6 +45,9 @@ class CtpOrderRefMap {
   /// stops meaning anything.
   void clear();
 
+  /// Removes one live order mapping after its terminal event.
+  void erase(std::uint64_t orderRef);
+
   std::size_t size() const { return byOrderRef_.size(); }
 
  private:
