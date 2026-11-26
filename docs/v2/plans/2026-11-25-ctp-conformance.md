@@ -8,7 +8,7 @@
 
 **Tech Stack:** C++17、CTP SDK、CMake/ctest。
 
-**Spec:** `docs/2026-11-25-ctp-ors-changes.md`
+**Spec:** `docs/v2/2026-11-25-ctp-ors-changes.md`
 
 ## Global Constraints
 

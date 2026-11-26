@@ -268,7 +268,7 @@ stream IDs            由 STREAM_BASE 按固定布局整组生成
 
 已知残余风险（当前 SimNow 阶段暂时接受，实盘前必须处理）：runtime 目前会把
 CTP 回调统一盖成当前 epoch，若 SDK 在重连后仍投递旧 front 回报，旧 FILLED/Trade
-可能被当成新事件。详见 `docs/2026-11-24-ctp-acceptance.md` §7.1。
+可能被当成新事件。详见 `docs/v2/2026-11-24-ctp-acceptance.md` §7.1。
 
 当前已加一层连接代次过滤：`CtpAdapter` 用登录返回的 `FrontID` / `SessionID`
 核对 `OnRtnOrder`、撤单回报和已绑定订单的 `OnRtnTrade`；旧 front 的回报直接丢弃。

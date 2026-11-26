@@ -11,11 +11,10 @@ L0 / ORS
 
 设计文档：
 
-- [L0 ORS 设计（当前，2026-11-26）](docs/v3-l0-ors-design.md)
-- [L0-L6 边界复盘](docs/2026-11-26-layer-boundaries-review.md)
-- [历史：L0 ORS CTP 对接方案（2026-11-24）](docs/2026-11-24-l0-ors-ctp-design.md)
-- [CTP/SimNow 验收记录（PARTIAL）](docs/2026-11-24-ctp-acceptance.md)
-- [自包含检查](docs/2026-11-25-self-contained.md)
+- [v3：当前 L0 ORS 设计](docs/v3/l0-ors-design.md)
+- [v3：文档索引](docs/v3/README.md)
+- [v2：历史改动与验收（ARCHIVED）](docs/v2/README.md)
+- [v1：初版设计（ARCHIVED）](docs/v1/README.md)
 
 Contract C++ SBE 生成：
 

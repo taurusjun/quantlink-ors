@@ -8,7 +8,7 @@
 
 **技术栈：** C++20、CMake 3.25+、CTP 6.7.x（SimNow 支持版本，构建时 pin）、SBE 1.35.6 C++ codegen、Aeron C++ client、CTest。
 
-**Spec：** `docs/2026-11-24-l0-ors-ctp-design.md`
+**Spec：** `docs/v1/2026-11-24-l0-ors-ctp-design.md`
 
 ## Global Constraints
 
@@ -498,7 +498,7 @@ git commit -m "feat(ctp): reconcile after reconnect"
 ### Task 8: SimNow 190 验收
 
 **Files:**
-- Create: `docs/2026-11-24-ctp-acceptance.md`
+- Create: `docs/v2/2026-11-24-ctp-acceptance.md`
 - Modify: `README.md`
 
 **验收命令：**
@@ -531,7 +531,7 @@ contract 0.2.0 消息可被 L1 消费
 提交：
 
 ```bash
-git add docs/2026-11-24-ctp-acceptance.md README.md
+git add docs/v2/2026-11-24-ctp-acceptance.md README.md
 git commit -m "docs: record CTP SimNow acceptance"
 ```
 
