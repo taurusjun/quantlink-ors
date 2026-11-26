@@ -186,7 +186,7 @@ class OrderSender {
  * SPI, so it must be destroyed before the session (or detached, which the
  * destructor does). Requests before READY are rejected with an OrderUpdate
  * instead of being dropped. Reports whose CTP OrderRef is not known are kept in
- * pendingUpdates()/pendingTrades() with orderRef 0 for the reconciler (Task 7)
+ * pendingUpdates()/pendingTrades() with orderRef 0 for downstream recovery
  * instead of being thrown away.
  *
  * ModifyRequest is rejected: CTP `ReqOrderAction` only supports Delete.

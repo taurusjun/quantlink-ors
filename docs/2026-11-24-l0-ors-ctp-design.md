@@ -45,7 +45,7 @@ L0 需要 0.2.0 contract（orderRef / 20 档 / ModifyRequest）
 4. 用 SimNow 账户完成登录、查询、行情、下单、撤单、成交、持仓验收
 5. 运行在 190（Rocky Linux 9 / x86_64）
 6. 不把密码、AppID、AuthCode 写进仓库
-7. 断线重连后靠查询/回报对账，不引入历史数据库
+7. 断线重连后由 L2/DataService 对账；ORS 不建立订单状态，不查询 CTP 订单/成交
 ```
 
 非目标：
@@ -133,7 +133,6 @@ C++ CTP sidecar -> TCP/JSON -> Java bridge -> contract
               ├─ CtpConfig
               ├─ CtpInstrumentMap
               ├─ CtpOrderRefMap
-              ├─ CtpReconciler
               └─ CtpClock
                    │
              ContractSink
@@ -171,13 +170,16 @@ Instrument 查询
 订单/成交回报
 账户/持仓查询
 CTP -> L0 字段映射
-重连/对账
+重连后重新发布 session；不查询/不维护订单状态
 ```
 
 不负责：
 
 ```text
 策略
+订单记录/订单状态权威（归 L2 TradingChannel / OrderRegistry）
+订单读模型（归 DataService ServiceOrderDataStore）
+```
 账户路由
 GUI
 PnL 计算
@@ -245,7 +247,7 @@ OnFrontDisconnected
   -> 停止新单
   -> 重连后重新认证/登录/结算确认
   -> sourceSessionId/sourcePublicationEpoch 递增
-  -> 查询 open orders/trades/positions 对账
+  -> 查询 positions 发布快照；订单对账由 L2/DataService 负责
 ```
 
 不猜丢失回报。
@@ -261,8 +263,8 @@ stream IDs            由 STREAM_BASE 按固定布局整组生成
 ```
 
 真实重连时必须递增 `sourcePublicationEpoch` 并重新发布 `VenueSession`；旧 epoch
-的 OrderUpdate/Trade 必须丢弃。runtime 已接入 `CtpReconciler`：断线发布 LOST，
-重连后查询 orders/trades/positions 对账，对账完成再发布 READY。
+的 OrderUpdate/Trade 必须丢弃。runtime 断线发布 LOST，重连后只查询 positions
+完成快照，不建立订单状态。
 
 已知残余风险（当前 SimNow 阶段暂时接受，实盘前必须处理）：runtime 目前会把
 CTP 回调统一盖成当前 epoch，若 SDK 在重连后仍投递旧 front 回报，旧 FILLED/Trade
@@ -274,8 +276,8 @@ CTP 回调统一盖成当前 epoch，若 SDK 在重连后仍投递旧 front 回�
 拿到相同的 `FrontID` / `SessionID`，仅靠这层仍无法区分，这是剩余风险。
 
 成交事件不重放：CTP `OnRtnTrade` 按 at-most-once 处理，L0 不按 `tradeId` 去重。
-Aeron 发布使用 `aeron:ipc`，没有 Archive/replay；重连查询得到的 `TradeSnapshot`
-只进入 `CtpReconciler` 更新订单状态，不会重新发布 `Trade`。如果未来引入
+Aeron 发布使用 `aeron:ipc`，没有 Archive/replay；`query-smoke` 的
+`TradeSnapshot` 仅用于诊断，不进入 runtime 订单状态。如果未来引入
 Aeron Archive 或消费端重放，由 L2 按契约唯一键
 `(venueId, accountId, tradingDay, tradeId)` 做幂等，不在 L0 维护第二套去重集合。
 
@@ -309,7 +311,7 @@ exchange     string
 2. CTP adapter 把 orderRef 格式化为 CTP OrderRef（最多 12 位数字）
 3. adapter 维护 orderRef <-> (FrontID, SessionID, OrderRef, OrderSysID)
 4. 超出 12 位或非法 orderRef 直接拒绝
-5. 重连后按 OrderRef/FrontID/SessionID 查询对账
+5. 重连后 ORS 不查询订单/成交；对账由 L2/DataService 负责
 ```
 
 CTP 的 `OrderSysID` / `TradeID` 是固定宽度 `char` 数组，实际值可能出现前导空格
@@ -409,8 +411,10 @@ sourceSessionId + sourcePublicationEpoch + seq
 ReqQryTradingAccount
 ReqQryInvestorPosition
 ReqQryInvestorPositionDetail
-ReqQryOrder / ReqQryTrade（对账用）
 ```
+
+`query-smoke` 的 `ReqQryOrder` / `ReqQryTrade` 仅保留为诊断工具，runtime 不调用，
+也不把结果写入订单状态。
 
 发布：
 
@@ -483,26 +487,18 @@ FrontID/SessionID 不匹配的 `ReqOrderAction`，验证真实 CTP 撤单拒绝�
 
 ## 11. 重连与对账
 
-第一版不使用历史数据库，依靠：
+ORS 不建立订单状态，也不查询 CTP 订单/成交。重连只负责：
 
 ```text
-OnRtnOrder / OnRtnTrade
-ReqQryOrder
-ReqQryTrade
-ReqQryInvestorPosition
-ReqQryTradingAccount
+1. 登录/结算确认
+2. 发布新的 VenueSession / epoch
+3. 查询 positions 发布快照
+4. 订单对账交给 L2 TradingChannel / OrderRegistry 和 DataService
 ```
 
-重连流程：
-
-```text
-1. 清空本 session 的临时 order 映射
-2. 登录/结算确认
-3. 查询 order/trade
-4. 按 OrderRef/FrontID/SessionID 重建
-5. 对不上 -> 标 UNKNOWN，禁止新单或降级
-6. 发布新的 VenueSession/epoch
-```
+DataService 的 `ServiceOrderDataStore` 保存 open/closed 订单读模型；L2 的
+`OrderRegistry` 是交易状态权威。ORS 只保留临时 `orderRef -> FrontID/SessionID/
+OrderSysID` 路由信息，用于撤单寻址和迟到回报识别。
 
 ---
 
@@ -581,14 +577,12 @@ quantlink-ors/
       CtpSession.h
       CtpAdapter.h
       CtpOrderRefMap.h
-      CtpReconciler.h
     src/
       CtpSession.cpp
       CtpTraderSpi.cpp
       CtpMdSpi.cpp
       CtpAdapter.cpp
       CtpOrderRefMap.cpp
-      CtpReconciler.cpp
       main.cpp
     tests/
     configs/
@@ -641,16 +635,16 @@ FastTrade/AccessClient 消费
 
 验收：L1 消费 ORS 的 0.2.0 消息。
 
-### Phase 5：重连/对账
+### Phase 5：重连
 
 ```text
 断线重连
 session epoch
-查询对账
-UNKNOWN 处理
+position snapshot
+订单对账由 L2/DataService 负责
 ```
 
-验收：断线后不重复下单、不丢终态。
+验收：断线后 ORS 不重复维护订单状态，L2/DataService 能完成对账。
 
 ---
 
@@ -664,7 +658,7 @@ UNKNOWN 处理
 5. Account/Position 快照通过
 6. 下单/撤单/成交回报通过
 7. contract 0.2.0 编码字段正确
-8. 重连后对账通过
+8. 重连 epoch/position snapshot 通过；订单对账由 L2/DataService 验收
 9. 无密码/AppID/AuthCode 入库
 ```
 
@@ -678,5 +672,4 @@ UNKNOWN 处理
 3. CTP 不支持的 ModifyRequest 错误码
 4. SimNow 测试账户/交易时段
 5. 是否允许同一 ORS 连接多个 CTP 前置
-6. 订单查询频率和快照周期
 ```

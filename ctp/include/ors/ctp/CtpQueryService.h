@@ -97,8 +97,9 @@ struct TradeSnapshot {
   std::string tradeTime;
 };
 
-/// Result of the order/trade pair. Rows keep the header of their own query, so
-/// an orders-only run leaves trades empty instead of inventing a timestamp.
+/// Diagnostics only: `query-smoke` prints these order/trade rows. The ORS
+/// runtime does not consume them or build order state; DataService and L2 own
+/// order records.
 struct ReconciliationSnapshot {
   std::vector<OrderSnapshot> orders;
   std::vector<TradeSnapshot> trades;

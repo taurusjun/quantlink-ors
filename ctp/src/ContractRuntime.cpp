@@ -12,7 +12,6 @@
 #include "ors/ctp/AeronPublisher.h"
 #include "ors/ctp/CtpAdapter.h"
 #include "ors/ctp/CtpQueryService.h"
-#include "ors/ctp/CtpReconciler.h"
 #include "ors/ctp/CtpSession.h"
 
 namespace ors::ctp {
@@ -41,7 +40,6 @@ struct ContractRuntime::Impl final : ExecutionSink, SnapshotSink {
   CtpMdSession md;
   CtpQueryService queries;
   AeronCommandSubscriber commands;
-  CtpReconciler reconciler;
   std::size_t lastMdCount{0};
   bool mdPublished{false};
   std::chrono::steady_clock::time_point lastMdAt{};
@@ -51,11 +49,6 @@ struct ContractRuntime::Impl final : ExecutionSink, SnapshotSink {
   std::atomic_bool reconciling{false};
   std::atomic<std::uint64_t> currentEpoch{1};
   SessionState lastTraderState{SessionState::Disconnected};
-  std::vector<OrderSnapshot> reconOrders;
-  std::vector<TradeSnapshot> reconTrades;
-  std::vector<PositionSnapshot> reconPositions;
-  bool reconOrdersReady{false};
-  bool reconTradesReady{false};
   bool reconPositionsReady{false};
 
   Impl(CtpConfig configValue, ContractRuntimeConfig runtimeValue)
@@ -80,7 +73,6 @@ struct ContractRuntime::Impl final : ExecutionSink, SnapshotSink {
         commands(runtimeConfig.aeronDir, "aeron:ipc",
                  runtimeConfig.orderStream, runtimeConfig.cancelStream) {
     currentEpoch.store(runtimeConfig.sourcePublicationEpoch);
-    reconciler.setEpoch(runtimeConfig.sourcePublicationEpoch);
     adapter.setSink(this);
     queries.setSink(this);
   }
@@ -89,24 +81,16 @@ struct ContractRuntime::Impl final : ExecutionSink, SnapshotSink {
     OrderUpdate copy = update;
     copy.sourceSessionId = runtimeConfig.sourceSessionId;
     copy.sourcePublicationEpoch = currentEpoch.load(std::memory_order_relaxed);
-    {
-      std::lock_guard<std::mutex> lock(sinkMutex);
-      sink.publishOrderUpdate(copy);
-    }
-    std::lock_guard<std::mutex> lock(reconMutex);
-    reconciler.observe(copy);
+    std::lock_guard<std::mutex> lock(sinkMutex);
+    sink.publishOrderUpdate(copy);
   }
 
   void onTrade(const Trade& trade) override {
     Trade copy = trade;
     copy.sourceSessionId = runtimeConfig.sourceSessionId;
     copy.sourcePublicationEpoch = currentEpoch.load(std::memory_order_relaxed);
-    {
-      std::lock_guard<std::mutex> lock(sinkMutex);
-      sink.publishTrade(copy);
-    }
-    std::lock_guard<std::mutex> lock(reconMutex);
-    reconciler.observe(copy);
+    std::lock_guard<std::mutex> lock(sinkMutex);
+    sink.publishTrade(copy);
   }
 
   void onSnapshot(const AccountSnapshot& snapshot) override {
@@ -121,18 +105,11 @@ struct ContractRuntime::Impl final : ExecutionSink, SnapshotSink {
     }
     if (!reconciling.load(std::memory_order_relaxed)) return;
     std::lock_guard<std::mutex> lock(reconMutex);
-    reconPositions = snapshot;
     reconPositionsReady = true;
   }
 
-  void onSnapshot(const ReconciliationSnapshot& snapshot) override {
-    std::lock_guard<std::mutex> lock(reconMutex);
-    if (!snapshot.orders.empty()) {
-      reconOrders = snapshot.orders;
-    }
-    if (!snapshot.trades.empty()) {
-      reconTrades = snapshot.trades;
-    }
+  void onSnapshot(const ReconciliationSnapshot&) override {
+    // Order/trade queries are diagnostic only; runtime does not build order state.
   }
 
   void publishSession() {
@@ -168,12 +145,6 @@ struct ContractRuntime::Impl final : ExecutionSink, SnapshotSink {
     }
     {
       std::lock_guard<std::mutex> lock(reconMutex);
-      reconciler.onReconnect();
-      reconOrders.clear();
-      reconTrades.clear();
-      reconPositions.clear();
-      reconOrdersReady = false;
-      reconTradesReady = false;
       reconPositionsReady = false;
     }
     std::cerr << "runtime reconnecting epoch=" << epoch << '\n';
@@ -181,18 +152,9 @@ struct ContractRuntime::Impl final : ExecutionSink, SnapshotSink {
   }
 
   bool finishReconciliation() {
-    std::vector<OrderSnapshot> orders;
-    std::vector<TradeSnapshot> trades;
-    std::vector<PositionSnapshot> positions;
     {
       std::lock_guard<std::mutex> lock(reconMutex);
-      if (!reconOrdersReady || !reconTradesReady || !reconPositionsReady) return false;
-      orders = reconOrders;
-      trades = reconTrades;
-      positions = reconPositions;
-      reconciler.reconcile(orders, trades, positions);
-      reconOrdersReady = false;
-      reconTradesReady = false;
+      if (!reconPositionsReady) return false;
       reconPositionsReady = false;
     }
     reconciling.store(false, std::memory_order_relaxed);
@@ -205,24 +167,16 @@ struct ContractRuntime::Impl final : ExecutionSink, SnapshotSink {
   void queryReconciliation() {
     {
       std::lock_guard<std::mutex> lock(reconMutex);
-      reconOrders.clear();
-      reconTrades.clear();
-      reconPositions.clear();
-      reconOrdersReady = false;
-      reconTradesReady = false;
       reconPositionsReady = false;
     }
-    const bool ordersOk = queries.queryOrders();
-    const bool tradesOk = queries.queryTrades();
     const bool positionsOk = queries.queryPositions();
     {
       std::lock_guard<std::mutex> lock(reconMutex);
-      reconOrdersReady = ordersOk;
-      reconTradesReady = tradesOk;
       reconPositionsReady = positionsOk;
     }
-    if (!ordersOk || !tradesOk || !positionsOk) {
-      std::cerr << "runtime reconciliation query failed: " << queries.lastError() << '\n';
+    if (!positionsOk) {
+      std::cerr << "runtime reconciliation position query failed: " << queries.lastError()
+                << '\n';
       return;
     }
     finishReconciliation();
@@ -287,16 +241,6 @@ struct ContractRuntime::Impl final : ExecutionSink, SnapshotSink {
           [this](const OrderRequest& request) {
             if (reconciling.load(std::memory_order_relaxed)) {
               adapter.rejectOrderRequest(request, "reconnect reconciliation pending");
-              return;
-            }
-            bool allowed = false;
-            {
-              std::lock_guard<std::mutex> lock(reconMutex);
-              allowed = reconciler.allowsNewOrder(reconciling.load(std::memory_order_relaxed),
-                                                    request.orderRef);
-            }
-            if (!allowed) {
-              adapter.rejectOrderRequest(request, "orderRef reconciliation pending");
               return;
             }
             if (!adapter.onOrderRequest(request)) {

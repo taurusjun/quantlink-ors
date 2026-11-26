@@ -31,7 +31,6 @@ Covered:
 
 ```text
 ctp_config / ctp_md / ctp_query / ctp_order_ref_map / ctp_adapter
-ctp_reconciler
 ctp_contract_sink
 ctp link/mode smoke
 ```
@@ -144,7 +143,8 @@ case is covered by `CtpAdapterTest::checkOldSessionReportsDropped`; a real old
 front callback is not naturally reproducible on SimNow, so it remains a
 fault-injection test rather than a live venue replay.
 
-Current 190 ctest: 16/16 PASS (`ctp_cancel_reject_mode_wired` added).
+Current 190 ctest: 15/15 PASS (`ctp_cancel_reject_mode_wired` added;
+`ctp_reconciler` removed with the ORS order-state cleanup).
 
 ## 6. L1 runtime wiring (CTP ORS -> FastTrade AccessClient)
 
@@ -219,62 +219,52 @@ SNAPSHOT ready=true account=true positions=2
 So the L1 wiring is **verified through command submission, execution publication,
 account/position snapshots, and one live fill** (Trade + fresh snapshots).
 
-## 6.4 Reconnect / epoch / reconciliation
+## 6.4 Reconnect / epoch
 
-`CtpReconciler` is now wired into `ContractRuntime`:
+Current runtime behavior after the order-ownership cleanup:
 
 ```text
 Disconnected/Failed after READY
   -> runtime.reconnecting epoch=2
   -> VenueSession LOST
-  -> queryOrders / queryTrades / queryPositions
-  -> CtpReconciler.reconcile(...)
+  -> re-login / settlement confirm
+  -> queryPositions (snapshot)
   -> runtime.reconciliation complete epoch=2
   -> VenueSession READY
 
 During reconciliation:
   new OrderRequest / CancelRequest are not sent to CTP
-  reconciler.canSubmit(orderRef) gates reused orderRefs
 ```
 
-Real disconnect test on 190 (2026-11-25):
+The runtime no longer calls `queryOrders` / `queryTrades`, no longer has
+`CtpReconciler`, and does not build order state. Order records and reconciliation
+belong to L2 `OrderRegistry` / `TradingChannel` and DataService
+`ServiceOrderDataStore`.
+
+Historical note: the 2026-11-25 iptables reconnect runs below were executed
+against the older runtime that still had `CtpReconciler` and order/trade queries.
+They prove the CTP disconnect/re-login/epoch path, but the order-reconciler
+portion is no longer part of the current design.
 
 ```text
 temporary iptables INPUT/OUTPUT drop to 182.254.243.31 for 120s
 [ctp] front disconnected reason=8193
 runtime reconnecting epoch=2
 [ctp] state=AUTHENTICATING -> ... -> READY
-runtime reconciliation complete epoch=2
-post-reconnect order reached ACK (price did not fill)
 ```
 
-Strong reconciliation scenario (2026-11-25 14:38-14:56):
-
 ```text
-OPEN order 400000001 @730.0 -> ACK
-network drop 120s -> epoch=2 -> reconciliation complete
-re-submit same orderRef -> REJECTED (orderRef already in use)
-cancel original -> CANCELED
-```
-
-Note: duplicate protection was observed at the CtpAdapter orderRef map. The
-runtime `allowsNewOrder` policy and `setEpoch`/cancel-rejection paths now have
-unit tests; a live duplicate that bypasses the adapter map is still not injected.
-
-Three-cycle reconnect stability run (2026-11-25 15:15-15:21):
-
-```text
-cycle 1: block 120s -> reconciliation complete epoch=2
-cycle 2: block 120s -> reconciliation complete epoch=3
-cycle 3: block 120s -> reconciliation complete epoch=4
+cycle 1: block 120s -> epoch=2
+cycle 2: block 120s -> epoch=3
+cycle 3: block 120s -> epoch=4
 ```
 
 Each cycle returned READY; no iptables rules or runtime process remained.
 
 ## 7.1 Residual risk assessment (accepted temporarily)
 
-The following two gaps are deliberately **not fixed** for the current SimNow/test
-phase. They must be reassessed before any live-money deployment.
+The following gap is deliberately **not fixed** for the current SimNow/test
+phase. It must be reassessed before any live-money deployment.
 
 ### R1. Old CTP callbacks can be stamped with the new epoch
 
@@ -283,7 +273,6 @@ Current runtime behavior:
 ```text
 ContractRuntime::onOrderUpdate/onTrade
   -> always writes currentEpoch into sourcePublicationEpoch
-  -> CtpReconciler.observe sees a current-epoch event
 ```
 
 Partial mitigation: `CtpAdapter` compares the login response's `FrontID` /
@@ -318,30 +307,11 @@ stamp callbacks with a CTP connection generation or verify FrontID/SessionID,
 and make runtime preserve/ignore the event epoch instead of overwriting it.
 ```
 
-### R2. Runtime canSubmit is not independently observed live
+### R2. Runtime orderRef gate
 
-Current live duplicate test was rejected by `CtpAdapter`'s orderRef map before
-the runtime `canSubmit` gate. The gate itself has unit coverage
-(`CtpReconcilerTest`), but its runtime wiring is not separately exercised.
-
-Risk judgment:
-
-```text
-Trigger probability: low
-Impact if bypassed: low
-  The adapter map is the stricter second line of defence and still prevents a
-  duplicate orderRef from reaching CTP.
-
-Overall: defence-in-depth gap, not an immediate duplicate-order hole.
-Current SimNow/test phase: accepted temporarily.
-```
-
-To close it later:
-
-```text
-add a test-only seam that removes/bypasses the adapter map while keeping the
-reconciler OPEN/UNKNOWN, then assert the runtime emits a local REJECTED.
-```
+Removed. ORS no longer keeps `CtpReconciler` or `canSubmit`; orderRef ownership
+and duplicate protection belong to L2/DataService. The CTP adapter still rejects
+a duplicate orderRef within its own live routing map.
 
 ## 7. Known gaps
 
@@ -350,6 +320,8 @@ reconciler OPEN/UNKNOWN, then assert the runtime emits a local REJECTED.
    test; duplicate orderRef is protected by the adapter map.
 2. GBK -> UTF-8 conversion and unit test are done; console rendering depends on
    the JVM output encoding.
+3. ORS order/trade query masks and runtime reconciliation were removed; L2/DataService
+   order reconciliation still needs its own acceptance gate.
 ```
 
 Therefore this acceptance is **PARTIAL**, not a production L1 end-to-end sign-off.
