@@ -6,11 +6,12 @@
 
 #include "core/OrsConfig.h"
 #include "transport/Frame.h"
+#include "md/MarketDataSink.h"
 #include "transport/OrsTransport.h"
 
 namespace ors {
 
-class AeronOrsTransport final : public OrsTransport {
+class AeronOrsTransport final : public OrsTransport, public MarketDataSink {
  public:
   AeronOrsTransport(OrsConfig config, FramePublisher& publisher,
                     FrameSubscriber& subscriber);
@@ -20,6 +21,9 @@ class AeronOrsTransport final : public OrsTransport {
              ClientRegisterHandler clientRegisterHandler) override;
   bool sendResponse(const illuminati::infra::ResponseMsg& response) override;
   bool sendMarketData(const illuminati::md::MarketUpdateNew& update) override;
+  bool send(const illuminati::md::MarketUpdateNew& update) override {
+    return sendMarketData(update);
+  }
   bool sendSession(const SessionEvent& event) override;
   bool sendAccount(const AccountSnapshot& snapshot) override;
   bool sendClientRegisterResponse(const ClientRegisterResult& result) override;

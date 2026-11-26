@@ -29,7 +29,7 @@ namespace illuminati
             long localWriteCount;
 
         public:
-            QueueReader<T, QueueBaseType>(QueueBaseType *queue_in) : queue(queue_in), localTail(0), localWriteCount(1) {}
+            QueueReader(QueueBaseType *queue_in) : queue(queue_in), localTail(0), localWriteCount(1) {}
 
             /*!
              * Gets the front item from the queue and moves the tail pointer ahead.

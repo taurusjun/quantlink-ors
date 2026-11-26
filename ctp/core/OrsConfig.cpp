@@ -32,7 +32,10 @@ OrsConfig OrsConfig::load(const std::string& path) {
   config.tradeFront = file.require("TRADE_FRONT");
   config.mdFront = file.require("MD_FRONT");
   config.flowDir = file.require("FLOW_DIR");
+  config.traderFlowDir = read(file, "TRADER_FLOW_DIR", config.flowDir.c_str());
+  config.mdFlowDir = read(file, "MD_FLOW_DIR", config.flowDir.c_str());
   config.accountId = file.require("ACCOUNT_ID");
+  config.instrument = read(file, "INSTRUMENT");
 
   config.authCode = read(file, "AUTH_CODE");
   config.appId = read(file, "APP_ID");

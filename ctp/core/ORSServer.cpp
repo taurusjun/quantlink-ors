@@ -311,16 +311,16 @@ void ORSServer::Login()
 
     if (m_pUserTradeApi == nullptr) {
         m_pUserTradeApi = CThostFtdcTraderApi::CreateFtdcTraderApi(
-            config_.flowDir.c_str());
+            config_.traderFlowDir.c_str());
     }
     if (m_pUserMDApi == nullptr) {
         m_pUserMDApi = CThostFtdcMdApi::CreateFtdcMdApi(
-            config_.flowDir.c_str());
+            config_.mdFlowDir.c_str());
     }
 
     tempTimeStamp = illuminati::ITime_ClockRT::GetCurrentTime();
     ILOG(INFO) << "|" << tempTimeStamp << "|"
-               << "Logging in to MD " << FRONT_ADDR_MD << "|" << m_BROKER_ID << "|" << m_INVESTOR_ID << "|" << m_PASSWORD << std::endl;
+               << "Logging in to MD " << FRONT_ADDR_MD << "|" << m_BROKER_ID << "|" << m_INVESTOR_ID << std::endl;
     // create MD classes
     m_pUserMDSpi = new CMdSpi(m_pUserMDApi);
     m_pUserMDApi->RegisterSpi(m_pUserMDSpi);
@@ -330,7 +330,7 @@ void ORSServer::Login()
 
     tempTimeStamp = illuminati::ITime_ClockRT::GetCurrentTime();
     ILOG(INFO) << "|" << tempTimeStamp << "|"
-               << "Logging in to ORS " << FRONT_ADDR_ORS << "|" << m_BROKER_ID << "|" << m_INVESTOR_ID << "|" << m_PASSWORD << std::endl;
+               << "Logging in to ORS " << FRONT_ADDR_ORS << "|" << m_BROKER_ID << "|" << m_INVESTOR_ID << std::endl;
     // create trade classes
     m_pUserTradeApi->RegisterSpi((CThostFtdcTraderSpi *)this);
     // we will log trades and re-consile orders
@@ -1104,7 +1104,7 @@ void ORSServer::ReqUserLogin()
     strcpy(req.Password, m_PASSWORD.c_str());
     tempTimeStamp = illuminati::ITime_ClockRT::GetCurrentTime();
     ILOG(INFO) << "|" << tempTimeStamp << "|"
-               << "BrokerID " << req.BrokerID << " UserID " << req.UserID << " Password " << req.Password << std::endl;
+               << "BrokerID " << req.BrokerID << " UserID " << req.UserID << std::endl;
     m_logonResp = false;
     int iResult = m_pUserTradeApi->ReqUserLogin(&req, ++m_iRequestID);
     if (!iResult)
@@ -1139,7 +1139,11 @@ void ORSServer::OnRspSettlementInfoConfirm(CThostFtdcSettlementInfoConfirmField 
                << "OnRspSettlementInfoConfirm" << std::endl;
     if (bIsLast && !IsErrorRspInfo(pRspInfo))
     {
-        ReqQryInstrument(NULL);
+        if (config_.instrument.empty()) {
+            ReqQryInstrument(NULL);
+        } else {
+            ReqQryInstrument(const_cast<char*>(config_.instrument.c_str()));
+        }
     }
 }
 

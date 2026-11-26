@@ -28,7 +28,7 @@ namespace illuminati
             long writerHead;
 
         public:
-            QueueSingleWriter<T, QueueBaseType>(QueueBaseType *queue_in) : queue(queue_in)
+            QueueSingleWriter(QueueBaseType *queue_in) : queue(queue_in)
             {
                 // We will write into the index where writerHead points to and increment it.
                 // Thus writerHead is pointing to a vacant location(can get overwritten next time).

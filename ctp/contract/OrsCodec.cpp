@@ -64,7 +64,7 @@ illuminati::infra::RequestMsg decodeRequest(sbe::OrsRequest& decoder) {
   request.DisclosedQnty = decoder.disclosedQty();
   request.Price = decoder.price();
   request.TimeStamp = decoder.timestamp();
-  copyText(request.AccountID, text(decoder.accountId(), 11));
+  request.setAccountId(text(decoder.accountId(), 11).c_str());
   request.Transaction_Type = static_cast<unsigned char>(decoder.transactionType());
   request.Exchange_Type = decoder.exchangeType();
   return request;
@@ -100,7 +100,8 @@ std::size_t encodeMarketUpdate(const illuminati::md::MarketUpdateNew& update,
       .sequence(update.m_seqnum)
       .reportSequence(update.m_rptseqnum)
       .tokenId(update.m_tokenId)
-      .lastPrice(update.m_newPrice)
+      .lastPrice(update.m_newPrice != 0.0 ? update.m_newPrice
+                             : update.m_lastTradedPrice)
       .lastTradedPrice(update.m_lastTradedPrice)
       .lastTradedTime(update.m_lastTradedTime)
       .lastTradedQty(update.m_lastTradedQuantity)

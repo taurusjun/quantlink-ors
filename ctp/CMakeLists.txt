@@ -45,7 +45,7 @@ target_compile_definitions(ors_base PRIVATE
 add_library(ors_core STATIC
     core/ORSServer.cpp
     core/RuntimeGlobals.cpp
-    core/ORSServerStubs.cpp
+    core/ORSServerCallbacks.cpp
     core/MdSpi.cpp
     core/MDHandler.cpp
     core/OrsConfig.cpp
@@ -78,11 +78,15 @@ if(AERON_HOME AND AERON_RUNTIME_HOME)
   find_library(AERON_LIB NAMES aeron
       PATHS "${AERON_RUNTIME_HOME}/lib" REQUIRED)
   add_library(ors_aeron_client STATIC transport/AeronClient.cpp)
-  if(NOT APPLE)
-    add_executable(ors_ctp main.cpp)
-    target_link_libraries(ors_ctp PRIVATE ors_aeron_client ors_transport ors_core)
-    target_compile_features(ors_ctp PRIVATE cxx_std_20)
-  endif()
+  add_executable(ors_ctp main.cpp)
+  target_link_libraries(ors_ctp PRIVATE ors_aeron_client ors_transport ors_core)
+  target_compile_features(ors_ctp PRIVATE cxx_std_20)
+
+  add_executable(ors_live_smoke tools/live_smoke.cpp)
+  target_link_libraries(ors_live_smoke PRIVATE ors_codec "${AERON_LIB}")
+  target_include_directories(ors_live_smoke PRIVATE
+      "${AERON_CPP_INCLUDE}" "${AERON_C_INCLUDE}")
+  target_compile_features(ors_live_smoke PRIVATE cxx_std_20)
   target_include_directories(ors_aeron_client PUBLIC
       "${AERON_CPP_INCLUDE}" "${AERON_C_INCLUDE}")
   target_link_libraries(ors_aeron_client PUBLIC ors_transport "${AERON_LIB}")
@@ -177,7 +181,7 @@ if(CTP_FRAMEWORK_DIR)
 endif()
 add_test(NAME ctp_md_handler COMMAND ctp_md_handler_test)
 
-add_executable(ctp_order_parity_test tests/OrderParityTest.cpp tests/CtpLinkStubs.cpp)
+add_executable(ctp_order_parity_test tests/OrderParityTest.cpp)
 target_link_libraries(ctp_order_parity_test PRIVATE ors_core)
 target_compile_features(ctp_order_parity_test PRIVATE cxx_std_20)
 if(CTP_FRAMEWORK_DIR)

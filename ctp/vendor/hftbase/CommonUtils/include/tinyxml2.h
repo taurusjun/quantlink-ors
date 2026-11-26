@@ -200,7 +200,7 @@ namespace tinyxml2
     class DynArray
     {
     public:
-        DynArray<T, INIT>()
+        DynArray()
         {
             _mem = _pool;
             _allocated = INIT;

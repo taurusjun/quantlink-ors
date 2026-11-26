@@ -64,10 +64,10 @@ namespace illuminati
             // char padding[ ( ((( sizeof(T)*8 + 64 )/128) + 1)*128) - ( sizeof(T)*8 + 64 ) ];
             // char padding[64];
 
-            QueueNode<T>() : writeCount(0)
+            QueueNode() : writeCount(0)
             {
             }
-            QueueNode<T>(T value_in) : writeCount(0), value(value_in)
+            QueueNode(T value_in) : writeCount(0), value(value_in)
             {
             }
         };
@@ -117,7 +117,7 @@ namespace illuminati
             friend class _CircularQSWType_(T, Storage, isMultiAccess);
 
         public:
-            CircularQueue<T, Storage, Args...>();
+            CircularQueue();
 
             std::atomic_long head;
 

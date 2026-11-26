@@ -13,10 +13,13 @@ struct OrsConfig {
   std::string tradeFront;
   std::string mdFront;
   std::string flowDir;
+  std::string traderFlowDir;
+  std::string mdFlowDir;
   std::string logPath;
   std::string aeronDir;
   std::string aeronChannel{"aeron:ipc"};
   std::string accountId;
+  std::string instrument;
   std::string venueId;
   std::string orsId;
   int requestStream{1};
