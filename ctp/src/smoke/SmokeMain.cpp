@@ -48,6 +48,25 @@ void copyField(char (&field)[N], const std::string& value) {
   std::snprintf(field, N, "%s", value.c_str());
 }
 
+/// Shared smoke session: one config, one CTP session, one order SPI adapter.
+struct SmokeSession {
+  CtpConfig config;
+  CtpTraderSession session;
+  CtpAdapter adapter;
+
+  explicit SmokeSession(const std::string& path)
+      : config(CtpConfig::load(path)), session(config), adapter(session) {}
+
+  bool start(std::chrono::milliseconds timeout) { return session.start(timeout); }
+
+  std::string exchangeFor(const std::string& instrument) const {
+    for (const auto& listed : session.instruments()) {
+      if (listed.instrumentId == instrument) return listed.exchangeId;
+    }
+    return {};
+  }
+};
+
 void usage() {
   std::cout << "usage: ors_ctp_smoke [--config PATH] --mode login-smoke|md-smoke|query-smoke|order-smoke|cancel-reject-smoke\n"
                "              [--instruments ID[,ID...]]\n"
@@ -330,6 +349,34 @@ bool parseQty(const std::string& text, int& qty) {
   return used == text.size();
 }
 
+/// Sends a ReqOrderAction with an intentionally wrong FrontID/SessionID.
+/// CTP rejects it through OnRsp/OnErr; the adapter keeps the order working.
+bool sendInvalidCancel(SmokeSession& smoke, std::uint64_t orderRef,
+                       const std::string& instrument, const std::string& exchange) {
+  CThostFtdcInputOrderActionField action{};
+  copyField(action.BrokerID, smoke.config.brokerId);
+  copyField(action.InvestorID, smoke.config.investorId);
+  copyField(action.UserID, smoke.config.investorId);
+  copyField(action.OrderRef, std::to_string(orderRef));
+  copyField(action.InstrumentID, instrument);
+  copyField(action.ExchangeID, exchange);
+  action.ActionFlag = THOST_FTDC_AF_Delete;
+  action.FrontID = 0;
+  action.SessionID = 0;
+  CThostFtdcTraderApi* api = smoke.session.traderApi();
+  if (api == nullptr) {
+    std::cerr << "FAILED: trader API is not available\n";
+    return false;
+  }
+  const int rc = api->ReqOrderAction(&action, smoke.session.nextRequestId());
+  std::cout << "raw cancel sent rc=" << rc << " front=0 session=0\n";
+  if (rc != 0) {
+    std::cerr << "FAILED: CTP rejected ReqOrderAction locally; no callback to verify\n";
+    return false;
+  }
+  return true;
+}
+
 /// order-smoke: one explicit limit order, one cancel. Dry-run unless --live.
 int orderSmoke(const std::string& configPath, const std::vector<std::string>& instruments,
                const std::string& priceText, const std::string& qtyText,
@@ -391,11 +438,12 @@ int orderSmoke(const std::string& configPath, const std::vector<std::string>& in
     return 0;
   }
 
-  const CtpConfig config = CtpConfig::load(configPath);
+  SmokeSession smoke(configPath);
+  const CtpConfig& config = smoke.config;
+  CtpTraderSession& session = smoke.session;
+  CtpAdapter& adapter = smoke.adapter;
   std::cout << "config: " << config.summary() << '\n';
-
-  CtpTraderSession session(config);
-  if (!session.start(std::chrono::seconds(120))) {
+  if (!smoke.start(std::chrono::seconds(120))) {
     std::cerr << "FAILED: " << session.lastError() << '\n';
     return 1;
   }
@@ -403,7 +451,6 @@ int orderSmoke(const std::string& configPath, const std::vector<std::string>& in
             << '\n';
 
   ExecutionPrinter printer;
-  CtpAdapter adapter(session);
   adapter.setSink(&printer);
 
   if (!adapter.onOrderRequest(request)) {
@@ -479,11 +526,12 @@ int cancelRejectSmoke(const std::string& configPath,
   }
 
   const std::string& instrument = instruments.front();
-  const CtpConfig config = CtpConfig::load(configPath);
+  SmokeSession smoke(configPath);
+  const CtpConfig& config = smoke.config;
+  CtpTraderSession& session = smoke.session;
+  CtpAdapter& adapter = smoke.adapter;
   std::cout << "config: " << config.summary() << '\n';
-
-  CtpTraderSession session(config);
-  if (!session.start(std::chrono::seconds(120))) {
+  if (!smoke.start(std::chrono::seconds(120))) {
     std::cerr << "FAILED: " << session.lastError() << '\n';
     return 1;
   }
@@ -491,7 +539,6 @@ int cancelRejectSmoke(const std::string& configPath,
             << '\n';
 
   ExecutionPrinter printer;
-  CtpAdapter adapter(session);
   adapter.setSink(&printer);
 
   OrderRequest request;
@@ -520,34 +567,8 @@ int cancelRejectSmoke(const std::string& configPath,
     return 1;
   }
 
-  std::string exchange;
-  for (const auto& listed : session.instruments()) {
-    if (listed.instrumentId == instrument) {
-      exchange = listed.exchangeId;
-      break;
-    }
-  }
-
-  CThostFtdcInputOrderActionField action{};
-  copyField(action.BrokerID, config.brokerId);
-  copyField(action.InvestorID, config.investorId);
-  copyField(action.UserID, config.investorId);
-  copyField(action.OrderRef, std::to_string(request.orderRef));
-  copyField(action.InstrumentID, instrument);
-  copyField(action.ExchangeID, exchange);
-  action.ActionFlag = THOST_FTDC_AF_Delete;
-  action.FrontID = 0;
-  action.SessionID = 0;
-
-  CThostFtdcTraderApi* api = session.traderApi();
-  if (api == nullptr) {
-    std::cerr << "FAILED: trader API is not available\n";
-    return 1;
-  }
-  const int rc = api->ReqOrderAction(&action, session.nextRequestId());
-  std::cout << "raw cancel sent rc=" << rc << " front=0 session=0\n";
-  if (rc != 0) {
-    std::cerr << "FAILED: CTP rejected ReqOrderAction locally; no callback to verify\n";
+  const std::string exchange = smoke.exchangeFor(instrument);
+  if (!sendInvalidCancel(smoke, request.orderRef, instrument, exchange)) {
     return 1;
   }
 
@@ -622,12 +643,12 @@ int lifecycleSmoke(const std::string& configPath,
   }
 
   const std::string& instrument = instruments.front();
-  const CtpConfig config = CtpConfig::load(configPath);
-  std::cout << "config: " << config.summary() << '\n';
-
-  CtpTraderSession session(config);
-  std::unique_ptr<CtpAdapter> adapter;
+  SmokeSession smoke(configPath);
+  const CtpConfig& config = smoke.config;
+  CtpTraderSession& session = smoke.session;
+  CtpAdapter& adapter = smoke.adapter;
   std::string exchange;
+  std::cout << "config: " << config.summary() << '\n';
 
   CallbackLifecycleVenue venue;
   venue.loginFn = [&]() {
@@ -643,13 +664,12 @@ int lifecycleSmoke(const std::string& configPath,
         break;
       }
     }
-    adapter = std::make_unique<CtpAdapter>(session);
     return true;
   };
 
   venue.cancelFn = [&]() {
     ExecutionPrinter printer;
-    adapter->setSink(&printer);
+    adapter.setSink(&printer);
     OrderRequest request;
     request.orderRef = 1;
     request.instrumentId = instrument;
@@ -660,8 +680,8 @@ int lifecycleSmoke(const std::string& configPath,
     request.price = restingPrice;
     request.qty = qty;
     request.requestId = "lifecycle-cancel-order";
-    if (!adapter->onOrderRequest(request)) {
-      std::cerr << "FAILED: cancel case insert: " << adapter->lastError() << '\n';
+    if (!adapter.onOrderRequest(request)) {
+      std::cerr << "FAILED: cancel case insert: " << adapter.lastError() << '\n';
       return false;
     }
     if (!printer.waitForUpdates(2, std::chrono::seconds(10))) {
@@ -673,19 +693,7 @@ int lifecycleSmoke(const std::string& configPath,
       return false;
     }
 
-    CThostFtdcInputOrderActionField action{};
-    copyField(action.BrokerID, config.brokerId);
-    copyField(action.InvestorID, config.investorId);
-    copyField(action.UserID, config.investorId);
-    copyField(action.OrderRef, std::to_string(request.orderRef));
-    copyField(action.InstrumentID, instrument);
-    copyField(action.ExchangeID, exchange);
-    action.ActionFlag = THOST_FTDC_AF_Delete;
-    action.FrontID = 0;
-    action.SessionID = 0;
-    CThostFtdcTraderApi* api = session.traderApi();
-    if (api == nullptr || api->ReqOrderAction(&action, session.nextRequestId()) != 0) {
-      std::cerr << "FAILED: invalid cancel request was rejected locally\n";
+    if (!sendInvalidCancel(smoke, request.orderRef, instrument, exchange)) {
       return false;
     }
     if (!printer.waitForCancelOutcome(std::chrono::seconds(10)) ||
@@ -698,20 +706,20 @@ int lifecycleSmoke(const std::string& configPath,
     cleanup.orderRef = request.orderRef;
     cleanup.instrumentId = instrument;
     cleanup.requestId = "lifecycle-cancel-cleanup";
-    if (!adapter->onCancelRequest(cleanup) ||
+    if (!adapter.onCancelRequest(cleanup) ||
         !printer.waitForUpdates(beforeCleanup + 1, std::chrono::seconds(10)) ||
         printer.lastStatus() != OrderStatus::Canceled) {
       std::cerr << "FAILED: cleanup cancel did not reach CANCELED\n";
       return false;
     }
     std::cout << "CANCEL-CASE rejected=true cleanup=CANCELED\n";
-    adapter->setSink(nullptr);
+    adapter.setSink(nullptr);
     return true;
   };
 
   venue.fillFn = [&]() {
     ExecutionPrinter printer;
-    adapter->setSink(&printer);
+    adapter.setSink(&printer);
     OrderRequest request;
     request.orderRef = 2;
     request.instrumentId = instrument;
@@ -722,8 +730,8 @@ int lifecycleSmoke(const std::string& configPath,
     request.price = fillPrice;
     request.qty = qty;
     request.requestId = "lifecycle-fill-order";
-    if (!adapter->onOrderRequest(request)) {
-      std::cerr << "FAILED: fill case insert: " << adapter->lastError() << '\n';
+    if (!adapter.onOrderRequest(request)) {
+      std::cerr << "FAILED: fill case insert: " << adapter.lastError() << '\n';
       return false;
     }
     if (!printer.waitForUpdates(2, std::chrono::seconds(10))) {
@@ -735,7 +743,7 @@ int lifecycleSmoke(const std::string& configPath,
       cleanup.orderRef = request.orderRef;
       cleanup.instrumentId = instrument;
       cleanup.requestId = "lifecycle-fill-cleanup";
-      (void)adapter->onCancelRequest(cleanup);
+      (void)adapter.onCancelRequest(cleanup);
       printer.waitForUpdates(printer.updateCount() + 1, std::chrono::seconds(10));
       std::cerr << "FAILED: fill order did not fill; choose a marketable --fill-price\n";
       return false;
@@ -746,7 +754,7 @@ int lifecycleSmoke(const std::string& configPath,
       return false;
     }
     std::cout << "FILL-CASE status=FILLED trades=" << printer.trades() << '\n';
-    adapter->setSink(nullptr);
+    adapter.setSink(nullptr);
     return true;
   };
 
