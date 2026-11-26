@@ -64,6 +64,7 @@ add_library(ors_ctp_core STATIC src/CtpTraderSession.cpp src/CtpMdSession.cpp
                                 src/CtpQueryService.cpp src/CtpOrderRefMap.cpp
                                 src/CtpAdapter.cpp src/SmokeLifecycle.cpp
                                 src/OfferRetry.cpp src/SessionRecovery.cpp src/MarketDataFreshness.cpp
+                                src/InboundValidation.cpp
                                 src/TextEncoding.cpp)
 target_include_directories(ors_ctp_core PUBLIC include)
 target_link_libraries(ors_ctp_core PUBLIC ors_ctp_config PRIVATE CTP::trader CTP::md)
@@ -123,6 +124,10 @@ add_test(NAME ctp_session_recovery COMMAND ctp_session_recovery_test)
 add_executable(ctp_market_data_freshness_test tests/MarketDataFreshnessTest.cpp)
 target_link_libraries(ctp_market_data_freshness_test PRIVATE ors_ctp_core)
 add_test(NAME ctp_market_data_freshness COMMAND ctp_market_data_freshness_test)
+
+add_executable(ctp_inbound_validation_test tests/InboundValidationTest.cpp)
+target_link_libraries(ctp_inbound_validation_test PRIVATE ors_ctp_core)
+add_test(NAME ctp_inbound_validation COMMAND ctp_inbound_validation_test)
 
 # Only mapDepthMarketData() runs here: no login, no network.
 add_executable(ctp_md_test tests/CtpMdSessionTest.cpp)

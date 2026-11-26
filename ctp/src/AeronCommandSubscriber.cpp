@@ -60,6 +60,7 @@ void AeronCommandSubscriber::poll(
     request.accountId = frame.getAccountIdAsString();
     request.venueId = frame.getVenueIdAsString();
     request.requestId = frame.getRequestIdAsString();
+    request.environment = frame.getEnvironmentAsString();
     request.sourceSessionId = frame.sourceSessionId();
     request.sourcePublicationEpoch = frame.sourcePublicationEpoch();
     onOrder(request);
@@ -81,6 +82,7 @@ void AeronCommandSubscriber::poll(
     request.accountId = frame.getAccountIdAsString();
     request.requestId = frame.getRequestIdAsString();
     request.venueId = frame.getVenueIdAsString();
+    request.environment = frame.getEnvironmentAsString();
     request.sourceSessionId = frame.sourceSessionId();
     request.sourcePublicationEpoch = frame.sourcePublicationEpoch();
     onCancel(request);

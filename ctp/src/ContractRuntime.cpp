@@ -13,6 +13,7 @@
 #include "ors/ctp/CtpAdapter.h"
 #include "ors/ctp/CtpQueryService.h"
 #include "ors/ctp/CtpSession.h"
+#include "ors/ctp/InboundValidation.h"
 #include "ors/ctp/SessionRecovery.h"
 #include "ors/base/Log.h"
 #include "ors/base/Metrics.h"
@@ -264,6 +265,16 @@ struct ContractRuntime::Impl final : ExecutionSink, SnapshotSink {
       commands.poll(10,
           [this](const OrderRequest& request) {
             metrics.ordersReceived.fetch_add(1, std::memory_order_relaxed);
+            if (const auto reason = validateInboundOrder(
+                    request, runtimeConfig.venueId, config.investorId,
+                    runtimeConfig.environment)) {
+              emit(spdlog::level::warn, "order.rejected",
+                   {base::LogField("order_ref", request.orderRef),
+                    base::LogField("reason", *reason),
+                    base::LogField("action", "invalid_identity")});
+              (void)adapter.rejectOrderRequest(request, *reason);
+              return;
+            }
             if (!transportHealthy.load(std::memory_order_relaxed)) {
               emit(spdlog::level::warn, "order.rejected",
                    {base::LogField("order_ref", request.orderRef),
@@ -278,6 +289,16 @@ struct ContractRuntime::Impl final : ExecutionSink, SnapshotSink {
           },
           [this](const CancelRequest& request) {
             metrics.ordersReceived.fetch_add(1, std::memory_order_relaxed);
+            if (const auto reason = validateInboundCancel(
+                    request, runtimeConfig.venueId, config.investorId,
+                    runtimeConfig.environment)) {
+              emit(spdlog::level::warn, "cancel.rejected",
+                   {base::LogField("order_ref", request.orderRef),
+                    base::LogField("reason", *reason),
+                    base::LogField("action", "invalid_identity")});
+              (void)adapter.rejectCancelRequest(request, *reason);
+              return;
+            }
             if (!transportHealthy.load(std::memory_order_relaxed)) {
               emit(spdlog::level::warn, "cancel.rejected",
                    {base::LogField("order_ref", request.orderRef),

@@ -52,7 +52,7 @@ struct OrderRequest {
   std::string accountId;
   std::string venueId;
   std::string requestId;
-  std::uint8_t environment{0};
+  std::string environment;
   std::uint64_t sourceSessionId{0};
   std::uint64_t sourcePublicationEpoch{0};
 };
@@ -64,7 +64,7 @@ struct CancelRequest {
   std::string accountId;
   std::string requestId;
   std::string venueId;
-  std::uint8_t environment{0};
+  std::string environment;
   std::uint64_t sourceSessionId{0};
   std::uint64_t sourcePublicationEpoch{0};
 };
@@ -86,7 +86,7 @@ struct ModifyRequest {
   std::string accountId;
   std::string venueId;
   std::string requestId;
-  std::uint8_t environment{0};
+  std::string environment;
   std::uint64_t sourceSessionId{0};
   std::uint64_t sourcePublicationEpoch{0};
 };
@@ -101,8 +101,8 @@ struct SessionIdentity {
 
 using SessionIdentityProvider = std::function<SessionIdentity()>;
 
-/// One L0 OrderUpdate. venueId/environment/sourceSessionId/epoch default to 0
-/// and are filled by whoever owns the contract context (Task 6).
+/// One L0 OrderUpdate. venueId/environment/sourceSessionId/epoch are filled
+/// by whoever owns the contract context (Task 6).
 struct OrderUpdate {
   std::uint64_t orderRef{0};
   std::string exchangeOrderId;
@@ -125,7 +125,7 @@ struct OrderUpdate {
   std::string accountId;
   std::string venueId;
   std::string exchange;
-  std::uint8_t environment{0};
+  std::string environment;
   std::uint64_t sourceSessionId{0};
   std::uint64_t sourcePublicationEpoch{0};
 };
@@ -148,7 +148,7 @@ struct Trade {
   std::string requestId;
   std::string accountId;
   std::string venueId;
-  std::uint8_t environment{0};
+  std::string environment;
   std::uint64_t sourceSessionId{0};
   std::uint64_t sourcePublicationEpoch{0};
 };
