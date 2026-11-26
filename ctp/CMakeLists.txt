@@ -63,6 +63,26 @@ target_include_directories(ors_codec PUBLIC "${CONTRACT_GENERATED_DIR}")
 target_link_libraries(ors_codec PUBLIC ors_core)
 target_compile_features(ors_codec PUBLIC cxx_std_20)
 
+set(AERON_HOME "" CACHE PATH "Aeron source root")
+set(AERON_RUNTIME_HOME "" CACHE PATH "Aeron runtime lib root")
+if(AERON_HOME AND AERON_RUNTIME_HOME)
+  find_path(AERON_CPP_INCLUDE NAMES Aeron.h
+      PATHS "${AERON_HOME}/aeron-client/src/main/cpp_wrapper" REQUIRED)
+  find_path(AERON_C_INCLUDE NAMES aeronc.h
+      PATHS "${AERON_HOME}/aeron-client/src/main/c" REQUIRED)
+  find_library(AERON_LIB NAMES aeron
+      PATHS "${AERON_RUNTIME_HOME}/lib" REQUIRED)
+  add_library(ors_aeron_client STATIC transport/AeronClient.cpp)
+  target_include_directories(ors_aeron_client PUBLIC
+      "${AERON_CPP_INCLUDE}" "${AERON_C_INCLUDE}")
+  target_link_libraries(ors_aeron_client PUBLIC ors_transport "${AERON_LIB}")
+  target_compile_features(ors_aeron_client PUBLIC cxx_std_20)
+endif()
+
+add_library(ors_transport STATIC transport/AeronOrsTransport.cpp)
+target_link_libraries(ors_transport PUBLIC ors_codec)
+target_compile_features(ors_transport PUBLIC cxx_std_20)
+
 add_executable(ctp_core_link_test tests/CoreLinkTest.cpp)
 target_link_libraries(ctp_core_link_test PRIVATE ors_core)
 target_compile_features(ctp_core_link_test PRIVATE cxx_std_20)
@@ -114,3 +134,11 @@ if(CTP_FRAMEWORK_DIR)
   set_target_properties(ctp_ors_codec_test PROPERTIES BUILD_RPATH "${CTP_FRAMEWORK_DIR}")
 endif()
 add_test(NAME ctp_ors_codec COMMAND ctp_ors_codec_test)
+
+add_executable(ctp_aeron_transport_test tests/AeronOrsTransportTest.cpp)
+target_link_libraries(ctp_aeron_transport_test PRIVATE ors_transport)
+target_compile_features(ctp_aeron_transport_test PRIVATE cxx_std_20)
+if(CTP_FRAMEWORK_DIR)
+  set_target_properties(ctp_aeron_transport_test PROPERTIES BUILD_RPATH "${CTP_FRAMEWORK_DIR}")
+endif()
+add_test(NAME ctp_aeron_transport COMMAND ctp_aeron_transport_test)
