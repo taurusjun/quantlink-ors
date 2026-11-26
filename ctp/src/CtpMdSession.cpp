@@ -17,6 +17,7 @@
 #include <utility>
 
 #include "ors/base/Log.h"
+#include "ors/ctp/SessionRecovery.h"
 
 namespace ors::ctp {
 namespace {
@@ -264,7 +265,9 @@ struct CtpMdSession::Impl {
   void onFrontConnected() {
     {
       std::lock_guard<std::mutex> lock(mutex_);
-      if (stopping_ || state_ != SessionState::Connecting) {
+      if (stopping_ ||
+          (state_ != SessionState::Connecting &&
+           !canLoginAfterDisconnect(state_))) {
         return;
       }
       state_ = SessionState::LoggingIn;

@@ -13,6 +13,7 @@
 #include "ors/ctp/CtpAdapter.h"
 #include "ors/ctp/CtpQueryService.h"
 #include "ors/ctp/CtpSession.h"
+#include "ors/ctp/SessionRecovery.h"
 #include "ors/base/Log.h"
 #include "ors/base/Metrics.h"
 
@@ -228,8 +229,15 @@ struct ContractRuntime::Impl final : ExecutionSink, SnapshotSink {
       }
     });
     auto lastSessionAt = std::chrono::steady_clock::now();
+    int exitCode = 0;
     while (!stopRequested.load(std::memory_order_relaxed)) {
       const SessionState traderState = trader.state();
+      if (isTerminalSessionFailure(traderState)) {
+        emit(spdlog::level::err, "ors.failed",
+             {base::LogField("reason", trader.lastError())});
+        exitCode = 1;
+        break;
+      }
       if (traderState != lastTraderState) {
         if (traderState != SessionState::Ready &&
             lastTraderState == SessionState::Ready) {
@@ -311,7 +319,7 @@ struct ContractRuntime::Impl final : ExecutionSink, SnapshotSink {
     emit(spdlog::level::info, "ors.shutdown", {});
     base::logMetrics(*logger, metrics);
     logger->flush();
-    return 0;
+    return exitCode;
   }
 };
 

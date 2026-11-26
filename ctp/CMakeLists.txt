@@ -63,7 +63,7 @@ target_link_libraries(ors_ctp_config PUBLIC ors_base)
 add_library(ors_ctp_core STATIC src/CtpTraderSession.cpp src/CtpMdSession.cpp
                                 src/CtpQueryService.cpp src/CtpOrderRefMap.cpp
                                 src/CtpAdapter.cpp src/SmokeLifecycle.cpp
-                                src/OfferRetry.cpp src/TextEncoding.cpp)
+                                src/OfferRetry.cpp src/SessionRecovery.cpp src/TextEncoding.cpp)
 target_include_directories(ors_ctp_core PUBLIC include)
 target_link_libraries(ors_ctp_core PUBLIC ors_ctp_config PRIVATE CTP::trader CTP::md)
 find_library(ICONV_LIBRARY NAMES iconv)
@@ -114,6 +114,10 @@ add_test(NAME ctp_price_sanitize COMMAND ctp_price_sanitize_test)
 add_executable(ctp_offer_retry_test tests/OfferRetryTest.cpp)
 target_link_libraries(ctp_offer_retry_test PRIVATE ors_ctp_core)
 add_test(NAME ctp_offer_retry COMMAND ctp_offer_retry_test)
+
+add_executable(ctp_session_recovery_test tests/SessionRecoveryTest.cpp)
+target_link_libraries(ctp_session_recovery_test PRIVATE ors_ctp_core)
+add_test(NAME ctp_session_recovery COMMAND ctp_session_recovery_test)
 
 # Only mapDepthMarketData() runs here: no login, no network.
 add_executable(ctp_md_test tests/CtpMdSessionTest.cpp)
