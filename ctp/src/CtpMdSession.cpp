@@ -18,6 +18,7 @@
 
 #include "ors/base/Log.h"
 #include "ors/ctp/SessionRecovery.h"
+#include "ors/ctp/MarketDataFreshness.h"
 
 namespace ors::ctp {
 namespace {
@@ -46,6 +47,12 @@ std::string flowPathWithSlash(const std::string& path) {
     return path + "/";
   }
   return path;
+}
+
+std::uint64_t nowNanos() {
+  const auto elapsed = std::chrono::system_clock::now().time_since_epoch();
+  return static_cast<std::uint64_t>(
+      std::chrono::duration_cast<std::chrono::nanoseconds>(elapsed).count());
 }
 
 DepthTick toDepthTick(const CThostFtdcDepthMarketDataField& row) {
@@ -205,6 +212,15 @@ struct CtpMdSession::Impl {
     return marketDataCount_;
   }
 
+  bool isMarketDataStale(std::chrono::steady_clock::time_point now,
+                         std::chrono::milliseconds limit) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (marketDataCount_ == 0) {
+      return false;
+    }
+    return ::ors::ctp::isMarketDataStale(lastTickAt_, now, limit);
+  }
+
   bool waitForMarketData(std::chrono::milliseconds timeout) {
     std::unique_lock<std::mutex> lock(mutex_);
     cv_.wait_for(lock, timeout, [this] { return marketDataCount_ > 0; });
@@ -310,7 +326,8 @@ struct CtpMdSession::Impl {
     cv_.notify_all();
   }
 
-  void onRspUserLogin(const CThostFtdcRspInfoField* info, bool isLast) {
+  void onRspUserLogin(const CThostFtdcRspUserLoginField* login,
+                      const CThostFtdcRspInfoField* info, bool isLast) {
     if (hasError(info)) {
       fail("md login failed: " + errorText(info));
       return;
@@ -322,6 +339,9 @@ struct CtpMdSession::Impl {
     CThostFtdcMdApi* api = nullptr;
     {
       std::lock_guard<std::mutex> lock(mutex_);
+      if (login != nullptr) {
+        tradingDay_ = login->TradingDay;
+      }
       state_ = SessionState::Ready;
       pending = pending_;
       api = api_;
@@ -358,9 +378,17 @@ struct CtpMdSession::Impl {
 
   void onRtnDepthMarketData(const CThostFtdcDepthMarketDataField& row) {
     MarketData data = mapDepthMarketData(toDepthTick(row));
+    data.ingestTimestamp = nowNanos();
+    const auto receivedAt = std::chrono::steady_clock::now();
     {
       std::lock_guard<std::mutex> lock(mutex_);
+      data.exchangeTimestamp =
+          ctpTimestampToNanos(tradingDay_, data.updateTime, data.updateMillisec);
+      if (marketDataCount_ > 0 && isSameMarketData(lastMarketData_, data)) {
+        return;
+      }
       lastMarketData_ = std::move(data);
+      lastTickAt_ = receivedAt;
       ++marketDataCount_;
     }
     cv_.notify_all();
@@ -433,9 +461,9 @@ struct CtpMdSession::Impl {
 
     void OnFrontDisconnected(int reason) override { owner_.onFrontDisconnected(reason); }
 
-    void OnRspUserLogin(CThostFtdcRspUserLoginField*, CThostFtdcRspInfoField* info,
-                        int, bool isLast) override {
-      owner_.onRspUserLogin(info, isLast);
+    void OnRspUserLogin(CThostFtdcRspUserLoginField* login,
+                        CThostFtdcRspInfoField* info, int, bool isLast) override {
+      owner_.onRspUserLogin(login, info, isLast);
     }
 
     void OnRspSubMarketData(CThostFtdcSpecificInstrumentField* instrument,
@@ -462,8 +490,10 @@ struct CtpMdSession::Impl {
   std::condition_variable cv_;
   SessionState state_{SessionState::Disconnected};
   std::string lastError_;
+  std::string tradingDay_;
   std::vector<std::string> pending_;
   MarketData lastMarketData_;
+  std::chrono::steady_clock::time_point lastTickAt_{};
   std::size_t marketDataCount_{0};
   std::atomic<int> requestId_{0};
   bool stopping_{false};
@@ -502,6 +532,11 @@ MarketData CtpMdSession::lastMarketData() const {
 
 std::size_t CtpMdSession::marketDataCount() const {
   return impl_->marketDataCount();
+}
+
+bool CtpMdSession::isMarketDataStale(std::chrono::steady_clock::time_point now,
+                                     std::chrono::milliseconds limit) const {
+  return impl_->isMarketDataStale(now, limit);
 }
 
 }  // namespace ors::ctp

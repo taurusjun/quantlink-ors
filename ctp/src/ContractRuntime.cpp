@@ -47,7 +47,7 @@ struct ContractRuntime::Impl final : ExecutionSink, SnapshotSink {
   AeronCommandSubscriber commands;
   std::size_t lastMdCount{0};
   bool mdPublished{false};
-  std::chrono::steady_clock::time_point lastMdAt{};
+  bool mdStale{false};
   std::chrono::steady_clock::time_point lastMetricsAt{};
   std::mutex sinkMutex;
   std::atomic_bool stopping{false};
@@ -146,17 +146,21 @@ struct ContractRuntime::Impl final : ExecutionSink, SnapshotSink {
     const SessionState traderState = trader.state();
     const bool ready = traderState == SessionState::Ready;
     const bool lost = traderState == SessionState::Disconnected ||
-                      traderState == SessionState::Failed;
+                      traderState == SessionState::Failed || mdStale;
     VenueSessionEvent session;
     session.tradingDay = trader.tradingDay();
-    session.loginState = ready ? csbe::GatewayState::UP : csbe::GatewayState::DOWN;
+    session.loginState = ready ? (mdStale ? csbe::GatewayState::DEGRADED
+                                          : csbe::GatewayState::UP)
+                               : csbe::GatewayState::DOWN;
     session.settlementState = ready ? csbe::SettlementState::SETTLED
                                     : csbe::SettlementState::NONE;
     session.adapterSessionId = runtimeConfig.orsId;
-    session.state = ready ? csbe::VenueSessionState::READY
+    session.state = ready ? (mdStale ? csbe::VenueSessionState::LOST
+                                     : csbe::VenueSessionState::READY)
                           : (lost ? csbe::VenueSessionState::LOST
                                   : csbe::VenueSessionState::STARTING);
-    session.reason = ready ? "" : trader.lastError();
+    session.reason = ready ? (mdStale ? "market data stale" : "")
+                           : trader.lastError();
     session.snapshotTimestamp = nowNanos();
     session.lastSeqByStream = {
         {static_cast<std::uint32_t>(runtimeConfig.streams.execution), adapter.sequence()},
@@ -287,20 +291,28 @@ struct ContractRuntime::Impl final : ExecutionSink, SnapshotSink {
             }
           });
 
+      const auto mdNow = std::chrono::steady_clock::now();
       const std::size_t count = md.marketDataCount();
       if (count != lastMdCount) {
         metrics.mdTicks.fetch_add(count - lastMdCount, std::memory_order_relaxed);
         lastMdCount = count;
         mdPublished = false;
       }
-      const auto mdNow = std::chrono::steady_clock::now();
-      if (lastMdCount > 0
-          && (!mdPublished || mdNow - lastMdAt >= std::chrono::seconds(1))) {
+      const bool stale =
+          lastMdCount > 0 &&
+          md.isMarketDataStale(mdNow, std::chrono::milliseconds(5000));
+      if (stale != mdStale) {
+        mdStale = stale;
+        metrics.mdStale.fetch_add(1, std::memory_order_relaxed);
+        emit(stale ? spdlog::level::warn : spdlog::level::info,
+             stale ? "md.stale" : "md.recovered", {});
+        publishSession();
+      }
+      if (!mdStale && lastMdCount > 0 && !mdPublished) {
         MarketData data = md.lastMarketData();
         if (data.exchange.empty()) data.exchange = runtimeConfig.exchange;
         std::lock_guard<std::mutex> lock(sinkMutex);
         mdPublished = sink.publishMarketData(data);
-        lastMdAt = mdNow;
       }
 
       const auto now = std::chrono::steady_clock::now();

@@ -139,6 +139,8 @@ void checkMarketData() {
   data.instrumentId = "au2612";
   data.exchange = "SHFE";
   data.lastPrice = 777.5;
+  data.exchangeTimestamp = 111;
+  data.ingestTimestamp = 222;
   data.volume = 100;
   data.turnover = 1000;
   data.openInterest = 10;
@@ -161,6 +163,8 @@ void checkMarketData() {
                         header.blockLength(), header.version(),
                         publisher.frames[0].bytes.size());
   check(decoded.seq() == 1, "first market data seq is 1");
+  check(decoded.exchangeTimestamp() == 111, "exchange timestamp reaches SBE");
+  check(decoded.ingestTimestamp() == 222, "ingest timestamp reaches SBE");
   auto& bids = decoded.bids();
   check(bids.count() == 20, "bid depth is 20");
   for (int level = 0; level < 20; ++level) {

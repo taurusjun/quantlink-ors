@@ -73,6 +73,8 @@ struct MarketData {
   double openInterest{0.0};
   std::string updateTime;
   int updateMillisec{0};
+  std::uint64_t exchangeTimestamp{0};
+  std::uint64_t ingestTimestamp{0};
   std::array<double, kMarketDepthLevels> bidPrices{};
   std::array<int, kMarketDepthLevels> bidQtys{};
   std::array<double, kMarketDepthLevels> askPrices{};
@@ -181,6 +183,10 @@ class CtpMdSession {
 
   MarketData lastMarketData() const;
   std::size_t marketDataCount() const;
+
+  /// True when at least one tick has arrived and the latest is older than limit.
+  bool isMarketDataStale(std::chrono::steady_clock::time_point now,
+                         std::chrono::milliseconds limit) const;
 
  private:
   struct Impl;
