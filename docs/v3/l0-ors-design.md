@@ -113,7 +113,7 @@ ors_ctp_smoke
 
 ## 3. 配置
 
-配置是同一个 `key=value` 文件，`CtpConfig` 和 `ContractRuntimeConfig` 共享严格解析。
+配置是同一个 `key=value` 文件，`CtpConfig` 和 `ContractRuntimeConfig` 共享 `ors_base::ConfigFile` 严格解析。
 
 ### 3.1 CTP 连接
 

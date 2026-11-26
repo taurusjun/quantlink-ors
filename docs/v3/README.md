@@ -8,6 +8,9 @@
 ## 文档
 
 - [L0 ORS 设计（CTP）](l0-ors-design.md)
+- [基础库：ConfigFile / Log / Metrics / ContractText](components.md)
+- [日志与指标规范](logging.md)
+- [L0 生产化实施计划](plans/2026-11-26-l0-ors-hardening.md)
 
 ## 当前边界
 
