@@ -594,6 +594,66 @@ void checkOldSessionReportsDropped() {
         "the old reports do not advance the order state");
 }
 
+void checkOldFrontInsertAndCancelReports() {
+  Fixture fixture;
+  fixture.identity = {3, 400};
+  check(fixture.adapter.onOrderRequest(baseRequest(7)), "old-front order accepted");
+  auto ack = orderRow("7", 3, 400, THOST_FTDC_OST_NoTradeQueueing, 0, 2);
+  fixture.adapter.OnRtnOrder(&ack);
+  check(fixture.adapter.onCancelRequest(cancelFor(7)), "old-front cancel accepted");
+  const std::size_t before = fixture.recorder.updates.size();
+
+  fixture.identity = {5, 600};
+
+  auto oldInsert = zeroed<CThostFtdcInputOrderField>();
+  setText(oldInsert.OrderRef, "7");
+  auto insertError = rspError(31, "old front insert error");
+  fixture.adapter.OnRspOrderInsert(&oldInsert, &insertError);
+  check(fixture.recorder.updates.size() == before,
+        "old-front OnRspOrderInsert does not publish a reject");
+
+  auto oldAction = zeroed<CThostFtdcInputOrderActionField>();
+  setText(oldAction.OrderRef, "7");
+  oldAction.FrontID = 3;
+  oldAction.SessionID = 400;
+  auto cancelError = rspError(25, "old front cancel error");
+  fixture.adapter.OnRspOrderAction(&oldAction, &cancelError);
+  check(fixture.recorder.updates.size() == before,
+        "old-front OnRspOrderAction does not publish a cancel reject");
+  auto oldReturn = zeroed<CThostFtdcOrderActionField>();
+  setText(oldReturn.OrderRef, "7");
+  oldReturn.FrontID = 3;
+  oldReturn.SessionID = 400;
+  fixture.adapter.OnErrRtnOrderAction(&oldReturn, &cancelError);
+  check(fixture.recorder.updates.size() == before,
+        "old-front OnErrRtnOrderAction does not publish a cancel reject");
+
+  check(fixture.adapter.onOrderRequest(baseRequest(8)),
+        "current-front order accepted");
+  auto currentInsert = zeroed<CThostFtdcInputOrderField>();
+  setText(currentInsert.OrderRef, "8");
+  auto currentError = rspError(32, "current front insert error");
+  fixture.adapter.OnRspOrderInsert(&currentInsert, &currentError);
+  check(fixture.recorder.last().orderRef == 8 &&
+            fixture.recorder.last().status == OrderStatus::Rejected,
+        "current-front OnRspOrderInsert still publishes a reject");
+
+  check(fixture.adapter.onOrderRequest(baseRequest(9)),
+        "current-front cancel order accepted");
+  auto currentAck = orderRow("9", 5, 600, THOST_FTDC_OST_NoTradeQueueing, 0, 2);
+  fixture.adapter.OnRtnOrder(&currentAck);
+  check(fixture.adapter.onCancelRequest(cancelFor(9)), "current-front cancel accepted");
+  auto currentAction = zeroed<CThostFtdcOrderActionField>();
+  setText(currentAction.OrderRef, "9");
+  currentAction.FrontID = 5;
+  currentAction.SessionID = 600;
+  auto currentCancelError = rspError(26, "current front cancel error");
+  fixture.adapter.OnErrRtnOrderAction(&currentAction, &currentCancelError);
+  check(fixture.recorder.last().orderRef == 9 &&
+            fixture.recorder.last().cancelState == CancelState::Rejected,
+        "current-front cancel reject still publishes");
+}
+
 void checkPaddedVenueIdsTrimmed() {
   Fixture fixture;
   check(fixture.adapter.onOrderRequest(baseRequest(7)), "the order is accepted");
@@ -729,6 +789,7 @@ int main() {
   checkModifyRejected();
   checkTradeExchangeFallback();
   checkOldSessionReportsDropped();
+  checkOldFrontInsertAndCancelReports();
   checkPaddedVenueIdsTrimmed();
   checkTradingDayResetsOrderState();
   checkTerminalOrderRemovedFromLiveMap();
