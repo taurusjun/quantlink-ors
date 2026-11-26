@@ -3,6 +3,8 @@
 #include <string>
 #include <utility>
 
+#include "ors/base/ContractText.h"
+
 #include "com_quantlink_contract_sbe/AccountSnapshot.h"
 #include "com_quantlink_contract_sbe/CancelState.h"
 #include "com_quantlink_contract_sbe/DataSource.h"
@@ -17,6 +19,7 @@
 
 namespace ors::ctp {
 namespace sbe = com::quantlink::contract::sbe;
+using base::fitContractField;
 ContractSink::ContractSink(FramePublisher& publisher, ContractContext context)
     : publisher_(publisher), context_(std::move(context)) {}
 
@@ -24,27 +27,27 @@ bool ContractSink::publishOrderUpdate(const OrderUpdate& update) {
   sbe::OrderUpdate message;
   message.wrapAndApplyHeader(buffer_.get(), 0, bufferSize_)
       .orderRef(update.orderRef)
-      .putExchangeOrderId(update.exchangeOrderId)
+      .putExchangeOrderId(fitContractField(update.exchangeOrderId, 32))
       .status(static_cast<sbe::OrderStatus::Value>(update.status))
       .cancelState(static_cast<sbe::CancelState::Value>(update.cancelState))
       .filledQty(update.filledQty)
       .remainingQty(update.remainingQty)
       .avgPrice(update.avgPrice)
-      .putReason(update.reason)
+      .putReason(fitContractField(update.reason, 64))
       .errorCode(update.errorCode)
-      .putTradingDay(update.tradingDay)
+      .putTradingDay(fitContractField(update.tradingDay, 8))
       .exchangeTimestamp(update.exchangeTimestamp)
       .ingestTimestamp(update.ingestTimestamp)
-      .putRequestId(update.requestId)
+      .putRequestId(fitContractField(update.requestId, 64))
       .sequence(update.sequence)
       .side(static_cast<sbe::Side::Value>(update.side))
       .offsetFlag(static_cast<sbe::Offset::Value>(update.offsetFlag))
       .orderQty(update.orderQty)
       .price(update.price)
-      .putAccountId(context_.accountId)
-      .putVenueId(context_.venueId)
-      .putExchange(update.exchange)
-      .putEnvironment(context_.environment)
+      .putAccountId(fitContractField(context_.accountId, 16))
+      .putVenueId(fitContractField(context_.venueId, 32))
+      .putExchange(fitContractField(update.exchange, 8))
+      .putEnvironment(fitContractField(context_.environment, 16))
       .sourceSessionId(context_.sourceSessionId)
       .sourcePublicationEpoch(context_.sourcePublicationEpoch);
   return publishFrame(context_.streams.execution, message.encodedLength() + sbe::MessageHeader::encodedLength());
@@ -53,25 +56,25 @@ bool ContractSink::publishOrderUpdate(const OrderUpdate& update) {
 bool ContractSink::publishTrade(const Trade& trade) {
   sbe::Trade message;
   message.wrapAndApplyHeader(buffer_.get(), 0, bufferSize_)
-      .putTradeId(trade.tradeId)
+      .putTradeId(fitContractField(trade.tradeId, 32))
       .orderRef(trade.orderRef)
-      .putExchangeOrderId(trade.exchangeOrderId)
+      .putExchangeOrderId(fitContractField(trade.exchangeOrderId, 32))
       .sequence(trade.sequence)
-      .putInstrumentId(trade.instrumentId)
+      .putInstrumentId(fitContractField(trade.instrumentId, 32))
       .side(static_cast<sbe::Side::Value>(trade.side))
       .offsetFlag(static_cast<sbe::Offset::Value>(trade.offsetFlag))
       .price(trade.price)
       .qty(trade.qty)
       .exchangeTimestamp(trade.exchangeTimestamp)
       .ingestTimestamp(trade.ingestTimestamp)
-      .putTradingDay(trade.tradingDay)
+      .putTradingDay(fitContractField(trade.tradingDay, 8))
       .fee(0.0)
       .feeKnown(0)
-      .putRequestId(trade.requestId)
-      .putAccountId(context_.accountId)
-      .putVenueId(context_.venueId)
-      .putExchange(trade.exchange)
-      .putEnvironment(context_.environment)
+      .putRequestId(fitContractField(trade.requestId, 64))
+      .putAccountId(fitContractField(context_.accountId, 16))
+      .putVenueId(fitContractField(context_.venueId, 32))
+      .putExchange(fitContractField(trade.exchange, 8))
+      .putEnvironment(fitContractField(context_.environment, 16))
       .sourceSessionId(context_.sourceSessionId)
       .sourcePublicationEpoch(context_.sourcePublicationEpoch);
   return publishFrame(context_.streams.execution, message.encodedLength() + sbe::MessageHeader::encodedLength());
@@ -80,10 +83,10 @@ bool ContractSink::publishTrade(const Trade& trade) {
 bool ContractSink::publishMarketData(const MarketData& data) {
   sbe::MarketData message;
   message.wrapAndApplyHeader(buffer_.get(), 0, bufferSize_)
-      .putInstrumentId(data.instrumentId)
-      .putVenueId(context_.venueId)
-      .putExchange(data.exchange)
-      .putEnvironment(context_.environment)
+      .putInstrumentId(fitContractField(data.instrumentId, 32))
+      .putVenueId(fitContractField(context_.venueId, 32))
+      .putExchange(fitContractField(data.exchange, 8))
+      .putEnvironment(fitContractField(context_.environment, 16))
       .exchangeTimestamp(0)
       .ingestTimestamp(0)
       .lastPrice(data.lastPrice)
@@ -110,7 +113,7 @@ bool ContractSink::publishMarketData(const MarketData& data) {
 bool ContractSink::publishAccountSnapshot(const AccountSnapshot& snapshot) {
   sbe::AccountSnapshot message;
   message.wrapAndApplyHeader(buffer_.get(), 0, bufferSize_)
-      .putAccountId(context_.accountId)
+      .putAccountId(fitContractField(context_.accountId, 16))
       .balance(snapshot.balance)
       .available(snapshot.available)
       .margin(snapshot.margin)
@@ -120,11 +123,11 @@ bool ContractSink::publishAccountSnapshot(const AccountSnapshot& snapshot) {
       .positionProfit(snapshot.positionProfit)
       .deposit(snapshot.deposit)
       .withdraw(snapshot.withdraw)
-      .putVenueId(context_.venueId)
-      .putEnvironment(context_.environment)
-      .putSnapshotId(snapshot.header.snapshotId)
+      .putVenueId(fitContractField(context_.venueId, 32))
+      .putEnvironment(fitContractField(context_.environment, 16))
+      .putSnapshotId(fitContractField(snapshot.header.snapshotId, 64))
       .source(sbe::DataSource::CTP)
-      .putTradingDay(snapshot.header.tradingDay)
+      .putTradingDay(fitContractField(snapshot.header.tradingDay, 8))
       .staleAfterMs(snapshot.header.staleAfterMs)
       .snapshotTimestamp(snapshot.header.snapshotTimestamp);
   return publishFrame(context_.streams.account, message.encodedLength() + sbe::MessageHeader::encodedLength());
@@ -133,8 +136,8 @@ bool ContractSink::publishAccountSnapshot(const AccountSnapshot& snapshot) {
 bool ContractSink::publishPositionSnapshot(const PositionSnapshot& snapshot) {
   sbe::PositionSnapshot message;
   message.wrapAndApplyHeader(buffer_.get(), 0, bufferSize_)
-      .putAccountId(context_.accountId)
-      .putInstrumentId(snapshot.instrumentId)
+      .putAccountId(fitContractField(context_.accountId, 16))
+      .putInstrumentId(fitContractField(snapshot.instrumentId, 32))
       .longQty(snapshot.longQty)
       .shortQty(snapshot.shortQty)
       .todayLong(snapshot.todayLong)
@@ -145,11 +148,11 @@ bool ContractSink::publishPositionSnapshot(const PositionSnapshot& snapshot) {
       .longAvgPrice(snapshot.longAvgPrice)
       .shortAvgPrice(snapshot.shortAvgPrice)
       .settlementPrice(snapshot.settlementPrice)
-      .putExchange(snapshot.exchange)
-      .putVenueId(context_.venueId)
-      .putEnvironment(context_.environment)
-      .putTradingDay(snapshot.header.tradingDay)
-      .putSnapshotId(snapshot.header.snapshotId)
+      .putExchange(fitContractField(snapshot.exchange, 8))
+      .putVenueId(fitContractField(context_.venueId, 32))
+      .putEnvironment(fitContractField(context_.environment, 16))
+      .putTradingDay(fitContractField(snapshot.header.tradingDay, 8))
+      .putSnapshotId(fitContractField(snapshot.header.snapshotId, 64))
       .source(sbe::DataSource::CTP)
       .staleAfterMs(snapshot.header.staleAfterMs)
       .snapshotTimestamp(snapshot.header.snapshotTimestamp);
@@ -163,18 +166,18 @@ void ContractSink::setSourcePublicationEpoch(std::uint64_t epoch) {
 bool ContractSink::publishSession(const VenueSessionEvent& session) {
   sbe::VenueSession message;
   message.wrapAndApplyHeader(buffer_.get(), 0, bufferSize_)
-      .putVenueId(context_.venueId)
-      .putAccountId(context_.accountId)
-      .putOrsId(context_.orsId)
+      .putVenueId(fitContractField(context_.venueId, 32))
+      .putAccountId(fitContractField(context_.accountId, 16))
+      .putOrsId(fitContractField(context_.orsId, 32))
       .sourceSessionId(context_.sourceSessionId)
       .sourcePublicationEpoch(context_.sourcePublicationEpoch)
-      .putEnvironment(context_.environment)
-      .putTradingDay(session.tradingDay)
+      .putEnvironment(fitContractField(context_.environment, 16))
+      .putTradingDay(fitContractField(session.tradingDay, 8))
       .loginState(session.loginState)
       .settlementState(session.settlementState)
-      .putAdapterSessionId(session.adapterSessionId)
+      .putAdapterSessionId(fitContractField(session.adapterSessionId, 64))
       .state(session.state)
-      .putReason(session.reason)
+      .putReason(fitContractField(session.reason, 64))
       .snapshotTimestamp(session.snapshotTimestamp);
   auto& sequences = message.lastSeqByStreamCount(
       static_cast<std::uint16_t>(session.lastSeqByStream.size()));

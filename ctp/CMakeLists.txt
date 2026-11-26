@@ -6,6 +6,7 @@ set(CONTRACT_GENERATED_DIR "${CMAKE_BINARY_DIR}/generated/contract" CACHE PATH
 # SBE codec + Aeron publisher adapter; generated headers are build artifacts.
 add_library(ors_contract STATIC src/ContractSink.cpp)
 target_include_directories(ors_contract PUBLIC include "${CONTRACT_GENERATED_DIR}")
+target_link_libraries(ors_contract PUBLIC ors_base)
 target_compile_features(ors_contract PUBLIC cxx_std_20)
 
 find_package(Threads REQUIRED)
@@ -17,6 +18,7 @@ endif()
 
 add_library(ors_base STATIC
     src/base/ConfigFile.cpp
+    src/base/ContractText.cpp
     src/base/StringList.cpp
     src/base/Log.cpp
     ../third_party/inih/ini.c)
@@ -96,6 +98,10 @@ add_test(NAME ctp_base_string_list COMMAND ctp_base_string_list_test)
 add_executable(ctp_base_log_test tests/BaseLogTest.cpp)
 target_link_libraries(ctp_base_log_test PRIVATE ors_base)
 add_test(NAME ctp_base_log COMMAND ctp_base_log_test)
+
+add_executable(ctp_contract_text_test tests/ContractTextTest.cpp)
+target_link_libraries(ctp_contract_text_test PRIVATE ors_base)
+add_test(NAME ctp_contract_text COMMAND ctp_contract_text_test)
 
 add_executable(ctp_runtime_config_test tests/RuntimeConfigTest.cpp)
 target_link_libraries(ctp_runtime_config_test PRIVATE ors_ctp_config)

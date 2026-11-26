@@ -71,6 +71,14 @@ std::uint16_t templateId(const Frame& frame) {
   return header.templateId();
 }
 
+std::string fieldText(const char* data, std::size_t maxBytes) {
+  std::size_t length = 0;
+  while (length < maxBytes && data[length] != '\0') {
+    ++length;
+  }
+  return std::string(data, length);
+}
+
 void checkExecution() {
   FakePublisher publisher;
   ContractSink sink(publisher, context());
@@ -222,6 +230,41 @@ void checkSessionEpochUpdate() {
   check(decoded.sourcePublicationEpoch() == 9, "session epoch setter reaches SBE");
 }
 
+void checkFittedSessionFields() {
+  FakePublisher publisher;
+  ContractContext value = context();
+  value.venueId = std::string(40, 'V');
+  value.orsId = std::string(40, 'O');
+  value.environment = std::string(20, 'E');
+  ContractSink sink(publisher, value);
+  VenueSessionEvent event;
+  event.tradingDay = std::string(12, 'D');
+  event.loginState = com::quantlink::contract::sbe::GatewayState::UP;
+  event.settlementState = com::quantlink::contract::sbe::SettlementState::SETTLED;
+  event.adapterSessionId = std::string(100, 'A');
+  event.state = SbeVenueSessionState::READY;
+  event.reason = std::string(100, 'R');
+  event.snapshotTimestamp = 100;
+  event.lastSeqByStream = {{2003, 1}};
+  check(sink.publishSession(event), "over-width session published");
+
+  com::quantlink::contract::sbe::MessageHeader header;
+  header.wrap(publisher.frames[0].bytes.data(), 0, 0, publisher.frames[0].bytes.size());
+  SbeVenueSession decoded;
+  decoded.wrapForDecode(publisher.frames[0].bytes.data(),
+                        com::quantlink::contract::sbe::MessageHeader::encodedLength(),
+                        header.blockLength(), header.version(),
+                        publisher.frames[0].bytes.size());
+  check(fieldText(decoded.venueId(), 32).size() == 32, "venueId fits 32 bytes");
+  check(fieldText(decoded.orsId(), 32).size() == 32, "orsId fits 32 bytes");
+  check(fieldText(decoded.environment(), 16).size() == 16,
+        "environment fits 16 bytes");
+  check(fieldText(decoded.tradingDay(), 8).size() == 8, "tradingDay fits 8 bytes");
+  check(fieldText(decoded.adapterSessionId(), 64).size() == 64,
+        "adapterSessionId fits 64 bytes");
+  check(fieldText(decoded.reason(), 64).size() == 64, "reason fits 64 bytes");
+}
+
 void checkSnapshots() {
   FakePublisher publisher;
   ContractSink sink(publisher, context());
@@ -253,6 +296,7 @@ int main() {
   checkMarketData();
   checkSession();
   checkSessionEpochUpdate();
+  checkFittedSessionFields();
   checkSnapshots();
   if (failures != 0) {
     std::cerr << failures << " failure(s)\n";

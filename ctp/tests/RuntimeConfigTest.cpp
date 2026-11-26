@@ -165,6 +165,45 @@ int main() {
   check(defaults.queryIntervalSeconds == 1, "QUERY_INTERVAL_SECONDS defaults to 1");
   check(defaults.logFile == "./log/ors.jsonl", "LOG_FILE defaults to ./log/ors.jsonl");
 
+  const std::string overVenue =
+      writeConfig(dir / "over_venue.cfg",
+                  "AERON_DIR = /tmp/aeron\n"
+                  "VENUE_ID = " + std::string(33, 'V') + "\n"
+                  "ORS_ID = ors\n"
+                  "ENVIRONMENT = SHADOW\n"
+                  "EXCHANGE = SHFE\n"
+                  "INSTRUMENTS = au2612\n"
+                  "STREAM_BASE = 9000\n"
+                  "SOURCE_PUBLICATION_EPOCH = 1\n");
+  check(throwsContaining([&] { ContractRuntimeConfig::load(overVenue); }, "VENUE_ID"),
+        "VENUE_ID over the contract width is rejected");
+
+  const std::string overOrs =
+      writeConfig(dir / "over_ors.cfg",
+                  "AERON_DIR = /tmp/aeron\n"
+                  "VENUE_ID = SIMNOW\n"
+                  "ORS_ID = " + std::string(33, 'O') + "\n"
+                  "ENVIRONMENT = SHADOW\n"
+                  "EXCHANGE = SHFE\n"
+                  "INSTRUMENTS = au2612\n"
+                  "STREAM_BASE = 9000\n"
+                  "SOURCE_PUBLICATION_EPOCH = 1\n");
+  check(throwsContaining([&] { ContractRuntimeConfig::load(overOrs); }, "ORS_ID"),
+        "ORS_ID over the contract width is rejected");
+
+  const std::string overEnvironment =
+      writeConfig(dir / "over_environment.cfg",
+                  "AERON_DIR = /tmp/aeron\n"
+                  "VENUE_ID = SIMNOW\n"
+                  "ORS_ID = ors\n"
+                  "ENVIRONMENT = " + std::string(17, 'E') + "\n"
+                  "EXCHANGE = SHFE\n"
+                  "INSTRUMENTS = au2612\n"
+                  "STREAM_BASE = 9000\n"
+                  "SOURCE_PUBLICATION_EPOCH = 1\n");
+  check(throwsContaining([&] { ContractRuntimeConfig::load(overEnvironment); }, "ENVIRONMENT"),
+        "ENVIRONMENT over the contract width is rejected");
+
   check(throwsContaining([&] { ContractRuntimeConfig::load(dir / "absent.cfg"); },
                          "cannot open"),
         "missing file is reported");

@@ -5,6 +5,7 @@
 #include <string>
 
 #include "ors/base/ConfigFile.h"
+#include "ors/base/ContractText.h"
 #include "ors/base/StringList.h"
 
 namespace ors::ctp {
@@ -58,6 +59,9 @@ ContractRuntimeConfig ContractRuntimeConfig::load(const std::string& path) {
   config.orsId = file.require("ORS_ID");
   config.environment = file.require("ENVIRONMENT");
   config.exchange = file.require("EXCHANGE");
+  base::requireContractWidth(config.venueId, 32, "VENUE_ID");
+  base::requireContractWidth(config.orsId, 32, "ORS_ID");
+  base::requireContractWidth(config.environment, 16, "ENVIRONMENT");
   config.instruments = base::splitList(file.require("INSTRUMENTS"));
   if (config.instruments.empty()) {
     throw std::runtime_error("ors runtime config: INSTRUMENTS is required");
