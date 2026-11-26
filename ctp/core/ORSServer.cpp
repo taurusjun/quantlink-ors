@@ -112,8 +112,23 @@ void ORSServer::Start()
     {
     }
 
-    illuminati::sysinfo::ProcessSettings ps;
-    ps.configure("LOGGER_THREAD");
+    accountQueryTimer_ = std::thread([this] {
+        while (m_connected) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            const auto expired = accountQueryState_.expire(
+                std::chrono::steady_clock::now());
+            if (!expired.has_value()) {
+                continue;
+            }
+            ::ors::AccountSnapshot snapshot;
+            snapshot.requestId = *expired;
+            snapshot.accountId = config_.accountId;
+            snapshot.errorCode = 4;
+            snapshot.errorMsg = "account query timeout";
+            snapshot.timestamp = illuminati::ITime_ClockRT::GetCurrentTime();
+            transport_.sendAccount(snapshot);
+        }
+    });
 
     installSignals();
     HandleSignals();
@@ -123,10 +138,114 @@ void ORSServer::Stop()
 {
     // accounts->Stop();
     m_connected = false;
+    if (accountQueryTimer_.joinable()) {
+        accountQueryTimer_.join();
+    }
     ILOG(INFO) << "Logging off\n";
     DoLoggOff();
     ILOG(INFO) << "Exiting\n";
     exit(0);
+}
+
+void ORSServer::RegisterClient(const ::ors::ClientRegisterRequest& request)
+{
+    ::ors::ClientRegisterResult result;
+    result.requestId = request.requestId;
+    result.timestamp = illuminati::ITime_ClockRT::GetCurrentTime();
+
+    const ::ors::ClientRegistration registration =
+        clientRegistry_.registerClient(request.instanceId);
+    result.clientId = registration.clientId;
+    result.errorCode = registration.errorCode;
+    result.errorMsg = registration.errorMessage;
+    clientRegistered_ = registration.ok;
+    transport_.sendClientRegisterResponse(result);
+}
+
+void ORSServer::QueryAccount(const ::ors::AccountQueryRequest& request)
+{
+    auto sendError = [this, &request](std::uint32_t code, const char* message) {
+        ::ors::AccountSnapshot snapshot;
+        snapshot.requestId = request.requestId;
+        snapshot.accountId = config_.accountId;
+        snapshot.errorCode = code;
+        snapshot.errorMsg = message;
+        snapshot.timestamp = illuminati::ITime_ClockRT::GetCurrentTime();
+        transport_.sendAccount(snapshot);
+    };
+
+    if (!m_connected) {
+        sendError(1, "ORS not ready");
+        return;
+    }
+    if (!accountQueryState_.tryBegin(
+            request.requestId, std::chrono::steady_clock::now(),
+            std::chrono::milliseconds(config_.accountQueryTimeoutMs))) {
+        sendError(3, "account query busy or throttled");
+        return;
+    }
+
+    CThostFtdcQryTradingAccountField query;
+    memset(&query, 0, sizeof(query));
+    strcpy(query.BrokerID, m_BROKER_ID.c_str());
+    strcpy(query.InvestorID, m_INVESTOR_ID.c_str());
+    const int ctpRequestId = ++m_iRequestID;
+    accountQueryState_.bindCtpRequest(ctpRequestId);
+    if (m_pUserTradeApi->ReqQryTradingAccount(&query, ctpRequestId) != 0) {
+        accountQueryState_.finish();
+        sendError(2, "CTP account query rejected");
+    }
+}
+
+void ORSServer::OnRspQryTradingAccount(
+    CThostFtdcTradingAccountField *pAccount,
+    CThostFtdcRspInfoField *pRspInfo, int nRequestID, bool bIsLast)
+{
+    const auto sdkRequestId = accountQueryState_.requestIdFor(nRequestID);
+    if (!sdkRequestId.has_value()) {
+        return;
+    }
+
+    auto error = [this, &sdkRequestId](std::uint32_t code, const char* message) {
+        ::ors::AccountSnapshot snapshot;
+        snapshot.requestId = *sdkRequestId;
+        snapshot.accountId = config_.accountId;
+        snapshot.errorCode = code;
+        snapshot.errorMsg = message;
+        snapshot.timestamp = illuminati::ITime_ClockRT::GetCurrentTime();
+        transport_.sendAccount(snapshot);
+        accountQueryState_.finish();
+    };
+
+    if (pRspInfo != nullptr && pRspInfo->ErrorID != 0) {
+        error(static_cast<std::uint32_t>(pRspInfo->ErrorID), pRspInfo->ErrorMsg);
+        return;
+    }
+    if (!bIsLast) {
+        return;
+    }
+    if (pAccount == nullptr) {
+        error(5, "empty account query response");
+        return;
+    }
+
+    ::ors::AccountSnapshot snapshot;
+    snapshot.requestId = *sdkRequestId;
+    snapshot.accountId = config_.accountId;
+    snapshot.tradingDay = pAccount->TradingDay;
+    snapshot.balance = pAccount->Balance;
+    snapshot.available = pAccount->Available;
+    snapshot.margin = pAccount->CurrMargin;
+    snapshot.frozenMargin = pAccount->FrozenMargin;
+    snapshot.commission = pAccount->Commission;
+    snapshot.closeProfit = pAccount->CloseProfit;
+    snapshot.positionProfit = pAccount->PositionProfit;
+    snapshot.deposit = pAccount->Deposit;
+    snapshot.withdraw = pAccount->Withdraw;
+    snapshot.errorCode = 0;
+    snapshot.timestamp = illuminati::ITime_ClockRT::GetCurrentTime();
+    transport_.sendAccount(snapshot);
+    accountQueryState_.finish();
 }
 
 void ORSServer::RmsError(ResponseType resptype, uint32_t orderid,
@@ -251,6 +370,10 @@ void ORSServer::ProcessRequest(RequestMsg *req)
 {
     RequestMsgSerializer rs(*req);
     ILOGQ(MSG, rs);
+    if (!clientRegistered_) {
+        RejectOrder(req, "ClientRegister required");
+        return;
+    }
     switch (req->Request_Type)
     {
     case NEWORDER:

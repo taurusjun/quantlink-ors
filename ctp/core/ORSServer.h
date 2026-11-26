@@ -26,6 +26,8 @@
 #include "core/OrsConfig.h"
 #include "core/OrsTypes.h"
 #include "core/PositionTable.h"
+#include "control/ClientRegistry.h"
+#include "query/AccountQueryState.h"
 #include "transport/OrsTransport.h"
 
 using namespace std;
@@ -99,6 +101,8 @@ public:
     void Login();
     void Start();
     void Stop();
+    void RegisterClient(const ::ors::ClientRegisterRequest&);
+    void QueryAccount(const ::ors::AccountQueryRequest&);
     void RejectOrder(RequestMsg *, const char *);
     inline __attribute__((always_inline)) void PushUpdate(ResponseMsg *);
     inline __attribute__((always_inline)) bool OrderCrossCheck(RequestMsg *);
@@ -151,6 +155,7 @@ public:
 
     virtual void OnRspQryInstrument(CThostFtdcInstrumentField *pInstrument, CThostFtdcRspInfoField *pRspInfo, int nRequestID, bool bIsLast);
     virtual void OnRspQryInvestorPosition(CThostFtdcInvestorPositionField *pPosition, CThostFtdcRspInfoField *pRspInfo, int nRequestID, bool bIsLast);
+    virtual void OnRspQryTradingAccount(CThostFtdcTradingAccountField *pAccount, CThostFtdcRspInfoField *pRspInfo, int nRequestID, bool bIsLast);
     virtual void OnRspSettlementInfoConfirm(CThostFtdcSettlementInfoConfirmField *pSettlementInfoConfirm, CThostFtdcRspInfoField *pRspInfo, int nRequestID, bool bIsLast);
     virtual void OnRtnOrder(CThostFtdcOrderField *pOrder);
     virtual void OnRtnOrder(CThostFtdcOrderField *pOrder, CThostFtdcRspInfoField *pRspInfo);
@@ -195,6 +200,10 @@ private:
     illuminati::infra::RmsImpl rms;
 
     ::ors::PositionTable positionTable_;
+    ::ors::ClientRegistry clientRegistry_;
+    ::ors::AccountQueryState accountQueryState_;
+    std::thread accountQueryTimer_;
+    bool clientRegistered_{false};
     std::vector<::ors::PositionRow> pendingPositionRows_;
 
     std::string m_rmsConfigFile;

@@ -42,6 +42,8 @@ add_library(ors_core STATIC
     core/MDHandler.cpp
     core/OrsConfig.cpp
     core/PositionTable.cpp
+    control/ClientRegistry.cpp
+    query/AccountQueryState.cpp
     log/Log.cpp
     transport/InMemoryOrsTransport.cpp
     vendor/hftbase/tinyxml2.cpp)
@@ -77,3 +79,19 @@ if(CTP_FRAMEWORK_DIR)
   set_target_properties(ctp_log_facade_test PROPERTIES BUILD_RPATH "${CTP_FRAMEWORK_DIR}")
 endif()
 add_test(NAME ctp_log_facade COMMAND ctp_log_facade_test)
+
+add_executable(ctp_client_registry_test tests/ClientRegistryTest.cpp)
+target_link_libraries(ctp_client_registry_test PRIVATE ors_core)
+target_compile_features(ctp_client_registry_test PRIVATE cxx_std_20)
+if(CTP_FRAMEWORK_DIR)
+  set_target_properties(ctp_client_registry_test PROPERTIES BUILD_RPATH "${CTP_FRAMEWORK_DIR}")
+endif()
+add_test(NAME ctp_client_registry COMMAND ctp_client_registry_test)
+
+add_executable(ctp_account_query_state_test tests/AccountQueryStateTest.cpp)
+target_link_libraries(ctp_account_query_state_test PRIVATE ors_core)
+target_compile_features(ctp_account_query_state_test PRIVATE cxx_std_20)
+if(CTP_FRAMEWORK_DIR)
+  set_target_properties(ctp_account_query_state_test PROPERTIES BUILD_RPATH "${CTP_FRAMEWORK_DIR}")
+endif()
+add_test(NAME ctp_account_query_state COMMAND ctp_account_query_state_test)
