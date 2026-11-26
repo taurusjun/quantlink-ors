@@ -253,25 +253,27 @@ account/position snapshots, and one live fill** (Trade + fresh snapshots).
 
 ## 6.4 Reconnect / epoch
 
-Current runtime behavior after the order-ownership cleanup:
+当前 runtime behavior after the order-ownership cleanup:
 
 ```text
 Disconnected/Failed after READY
   -> runtime.reconnecting epoch=2
   -> VenueSession LOST
   -> re-login / settlement confirm
-  -> queryPositions (snapshot)
-  -> runtime.reconciliation complete epoch=2
+  -> runtime.reconnected epoch=2
   -> VenueSession READY
 
-During reconciliation:
-  new OrderRequest / CancelRequest are not sent to CTP
+Periodically while READY:
+  queryAccount / queryPositions
+  -> AccountSnapshot / PositionSnapshot
 ```
 
 The runtime no longer calls `queryOrders` / `queryTrades`, no longer has
-`CtpReconciler`, and does not build order state. Order records and reconciliation
-belong to L2 `OrderRegistry` / `TradingChannel` and DataService
-`ServiceOrderDataStore`.
+`CtpReconciler`, and does not build order state. Account/position snapshots are
+still L0 facts published for L2/AccountSnapshotService; they are not the account
+truth and do not gate READY. Order records and order reconciliation belong to L2
+`OrderRegistry` / `TradingChannel` and L3 FactPublisher / L4 LocalAgent / L5 ReadModel.
+Query failures do not block the CTP session READY transition.
 
 Historical note: the 2026-11-25 iptables reconnect runs below were executed
 against the older runtime that still had `CtpReconciler` and order/trade queries.
@@ -342,7 +344,7 @@ and make runtime preserve/ignore the event epoch instead of overwriting it.
 ### R2. Runtime orderRef gate
 
 Removed. ORS no longer keeps `CtpReconciler` or `canSubmit`; orderRef ownership
-and duplicate protection belong to L2/DataService. The CTP adapter still rejects
+and duplicate protection belong to L2/LocalAgent/ReadModel. The CTP adapter still rejects
 a duplicate orderRef within its own live routing map.
 
 ## 7. Known gaps
@@ -352,7 +354,7 @@ a duplicate orderRef within its own live routing map.
    test; duplicate orderRef is protected by the adapter map.
 2. GBK -> UTF-8 conversion and unit test are done; console rendering depends on
    the JVM output encoding.
-3. ORS order/trade query masks and runtime reconciliation were removed; L2/DataService
+3. ORS order/trade query masks and runtime reconciliation were removed; L2/LocalAgent/ReadModel
    order reconciliation still needs its own acceptance gate.
 ```
 

@@ -45,7 +45,7 @@ L0 需要 0.2.0 contract（orderRef / 20 档 / ModifyRequest）
 4. 用 SimNow 账户完成登录、查询、行情、下单、撤单、成交、持仓验收
 5. 运行在 190（Rocky Linux 9 / x86_64）
 6. 不把密码、AppID、AuthCode 写进仓库
-7. 断线重连后由 L2/DataService 对账；ORS 不建立订单状态，不查询 CTP 订单/成交
+7. 断线重连后由 L2/LocalAgent/ReadModel 对账；ORS 不建立订单状态，不查询 CTP 订单/成交
 ```
 
 非目标：
@@ -178,7 +178,7 @@ CTP -> L0 字段映射
 ```text
 策略
 订单记录/订单状态权威（归 L2 TradingChannel / OrderRegistry）
-订单读模型（归 DataService ServiceOrderDataStore）
+订单读模型（归 L4 LocalAgent / L5 ReadModel）
 ```
 账户路由
 GUI
@@ -247,7 +247,7 @@ OnFrontDisconnected
   -> 停止新单
   -> 重连后重新认证/登录/结算确认
   -> sourceSessionId/sourcePublicationEpoch 递增
-  -> 查询 positions 发布快照；订单对账由 L2/DataService 负责
+  -> 查询 positions 发布快照；订单对账由 L2/LocalAgent/ReadModel 负责
 ```
 
 不猜丢失回报。
@@ -311,7 +311,7 @@ exchange     string
 2. CTP adapter 把 orderRef 格式化为 CTP OrderRef（最多 12 位数字）
 3. adapter 维护 orderRef <-> (FrontID, SessionID, OrderRef, OrderSysID)
 4. 超出 12 位或非法 orderRef 直接拒绝
-5. 重连后 ORS 不查询订单/成交；对账由 L2/DataService 负责
+5. 重连后 ORS 不查询订单/成交；对账由 L2/LocalAgent/ReadModel 负责
 ```
 
 CTP 的 `OrderSysID` / `TradeID` 是固定宽度 `char` 数组，实际值可能出现前导空格
@@ -505,12 +505,15 @@ ORS 不建立订单状态，也不查询 CTP 订单/成交。重连只负责：
 1. 登录/结算确认
 2. 发布新的 VenueSession / epoch
 3. 查询 positions 发布快照
-4. 订单对账交给 L2 TradingChannel / OrderRegistry 和 DataService
+4. 订单对账交给 L2 TradingChannel / OrderRegistry；读模型由 L3 FactPublisher / L4 LocalAgent / L5 ReadModel 生成
 ```
 
-DataService 的 `ServiceOrderDataStore` 保存 open/closed 订单读模型；L2 的
-`OrderRegistry` 是交易状态权威。ORS 只保留临时 `orderRef -> FrontID/SessionID/
-OrderSysID` 路由信息，用于撤单寻址和迟到回报识别。
+L2 的 `OrderRegistry` 是交易状态权威；L3 `FactPublisher` 发布订单/成交事实，
+L4 `LocalAgent` 采集转发，L5 `ReadModel` 重建 open/closed 订单读模型。
+v2 的 `DataService` 不是 v3 运行时组件；它只作为历史参考。
+
+ORS 只保留临时 `orderRef -> FrontID/SessionID/OrderSysID` 路由信息，
+用于撤单寻址和迟到回报识别。
 
 ---
 
@@ -653,10 +656,10 @@ FastTrade/AccessClient 消费
 断线重连
 session epoch
 position snapshot
-订单对账由 L2/DataService 负责
+订单对账由 L2/LocalAgent/ReadModel 负责
 ```
 
-验收：断线后 ORS 不重复维护订单状态，L2/DataService 能完成对账。
+验收：断线后 ORS 不重复维护订单状态，L2/LocalAgent/ReadModel 能完成对账。
 
 ---
 
@@ -670,7 +673,7 @@ position snapshot
 5. Account/Position 快照通过
 6. 下单/撤单/成交回报通过
 7. contract 0.2.0 编码字段正确
-8. 重连 epoch/position snapshot 通过；订单对账由 L2/DataService 验收
+8. 重连 epoch/position snapshot 通过；订单对账由 L2/LocalAgent/ReadModel 验收
 9. 无密码/AppID/AuthCode 入库
 ```
 

@@ -55,11 +55,10 @@ CLOSE 在 SHFE/INE 表示平昨，平今必须显式 CLOSE_TODAY。
 ./tools/reconnect_stability.sh \
   --config /opt/quantlink-fin/run/ors-simnow.cfg \
   --front 182.254.243.31 \
-  --instruments au2612 \
   --cycles 3 --block-seconds 120
 ```
 
-每个 cycle 会短时阻断 CTP front，要求 runtime 重新出现 `reconciliation complete`，
+每个 cycle 会短时阻断 CTP front，要求 runtime 出现新的 `runtime reconnected epoch=`，
 结果写到 `/tmp/ors-reconnect-stability.log`。
 
 运行时配置（`ors_ctp --config PATH` 只接受一个参数；身份和 stream 全部来自文件）：
