@@ -88,6 +88,7 @@ add_library(ors_engine STATIC
     src/execution/OpenOrderGuard.cpp
     src/execution/OffsetPolicy.cpp
     src/execution/OrderService.cpp
+    src/execution/OrderLog.cpp
     src/query/AccountQueryState.cpp
     src/query/AccountQueryService.cpp
     src/query/StartupQuery.cpp
@@ -183,3 +184,4 @@ ors_add_test(ctp_md_handler tests/unit/MDHandlerTest.cpp)
 ors_add_test(ctp_offset_policy tests/unit/OffsetPolicyTest.cpp)
 ors_add_test(ctp_order_service tests/unit/OrderServiceTest.cpp)
 ors_add_test(ctp_order_parity tests/unit/OrderParityTest.cpp)
+ors_add_test(ctp_order_log tests/unit/OrderLogTest.cpp)
