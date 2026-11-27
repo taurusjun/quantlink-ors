@@ -85,8 +85,13 @@ void ORSServer::registerStats()
                                                     20000);
 }
 
-ORSServer::ORSServer(::ors::OrsConfig config, ::ors::OrsTransport& transport)
-    : config_(std::move(config)), transport_(transport) {
+ORSServer::ORSServer(::ors::OrsConfig config, ::ors::OrsTransport& transport,
+                     MDHandler& mdHandler,
+                     ::ors::md::MarketUpdateNew& marketUpdate)
+    : config_(std::move(config)),
+      transport_(transport),
+      mdHandler_(mdHandler),
+      marketUpdate_(marketUpdate) {
     m_iRequestID = 0;
     iNextOrderRef = 0;
     m_connected = false;
@@ -310,20 +315,21 @@ void ORSServer::Login()
     m_APPID = config_.appId;
 
     if (m_pUserTradeApi == nullptr) {
-        m_pUserTradeApi = CThostFtdcTraderApi::CreateFtdcTraderApi(
-            config_.traderFlowDir.c_str());
+        m_pUserTradeApi.reset(CThostFtdcTraderApi::CreateFtdcTraderApi(
+            config_.traderFlowDir.c_str()));
     }
     if (m_pUserMDApi == nullptr) {
-        m_pUserMDApi = CThostFtdcMdApi::CreateFtdcMdApi(
-            config_.mdFlowDir.c_str());
+        m_pUserMDApi.reset(CThostFtdcMdApi::CreateFtdcMdApi(
+            config_.mdFlowDir.c_str()));
     }
 
     tempTimeStamp = ::ors::nowNanos();
     ORS_LOG(INFO) << "|" << tempTimeStamp << "|"
                << "Logging in to MD " << FRONT_ADDR_MD << "|" << m_BROKER_ID << "|" << m_INVESTOR_ID << std::endl;
     // create MD classes
-    m_pUserMDSpi = new CMdSpi(m_pUserMDApi);
-    m_pUserMDApi->RegisterSpi(m_pUserMDSpi);
+    m_pUserMDSpi = std::make_unique<CMdSpi>(
+        m_pUserMDApi.get(), *this, mdHandler_, marketUpdate_);
+    m_pUserMDApi->RegisterSpi(m_pUserMDSpi.get());
     m_pUserMDApi->RegisterFront((char *)FRONT_ADDR_MD.c_str());
     // m_pUserMDSpi->ReqUserLogin((char*)m_BROKER_ID.c_str(), (char*)m_INVESTOR_ID.c_str(), (char*)m_PASSWORD.c_str());
     m_pUserMDApi->Init();

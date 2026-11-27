@@ -16,11 +16,6 @@ using namespace std;
 extern char ppInstrumentID[200][30];
 extern int iInstrumentID;
 
-extern int g_RequestId;
-extern struct MarketUpdateNew *g_pUpdate;
-extern MDHandler *g_pMDHandler;
-extern ORSServer *g_pORS;
-
 struct tm tepoch = {0};
 void CMdSpi::OnRspError(CThostFtdcRspInfoField *pRspInfo, int nRequestID, bool bIsLast)
 {
@@ -49,7 +44,7 @@ void CMdSpi::OnFrontConnected()
 {
     tempTimeStamp = ::ors::nowNanos();
     ORS_LOG(INFO) << "|" << tempTimeStamp << "|" << __FUNCTION__ << endl;
-    ReqUserLogin((char *)g_pORS->m_BROKER_ID.c_str(), (char *)g_pORS->m_INVESTOR_ID.c_str(), (char *)g_pORS->m_PASSWORD.c_str());
+    ReqUserLogin((char *)server_.m_BROKER_ID.c_str(), (char *)server_.m_INVESTOR_ID.c_str(), (char *)server_.m_PASSWORD.c_str());
 }
 
 void CMdSpi::ReqUserLogin(TThostFtdcBrokerIDType BROKER_ID, TThostFtdcInvestorIDType INVESTOR_ID, TThostFtdcPasswordType PASSWORD)
@@ -59,7 +54,7 @@ void CMdSpi::ReqUserLogin(TThostFtdcBrokerIDType BROKER_ID, TThostFtdcInvestorID
     strcpy(req.BrokerID, BROKER_ID);
     strcpy(req.UserID, BROKER_ID);
     strcpy(req.Password, PASSWORD);
-    int iResult = m_pUserApi->ReqUserLogin(&req, ++g_RequestId);
+    int iResult = m_pUserApi->ReqUserLogin(&req, ++requestId_);
     m_iLoginMD = !iResult;
     tempTimeStamp = ::ors::nowNanos();
     ORS_LOG(INFO) << "|" << tempTimeStamp << "|"
@@ -112,7 +107,7 @@ void CMdSpi::SubscribeMarketData()
     iResult = -1;
 
     // iResult = m_pUserApi->SubscribeMarketData((char**)&ppInstrumentID[0], iInstrumentID);
-    for (SymbolMapIter iter = g_pORS->m_symbolMap.begin(); iter != g_pORS->m_symbolMap.end(); iter++)
+    for (SymbolMapIter iter = server_.m_symbolMap.begin(); iter != server_.m_symbolMap.end(); iter++)
     {
         char *temp = (char *)iter->first.c_str();
         iResult = m_pUserApi->SubscribeMarketData(&temp, 1);
@@ -157,48 +152,48 @@ void CMdSpi::OnRtnDepthMarketData(CThostFtdcDepthMarketDataField *pDepthMarketDa
 {
     // std::cout << __FUNCTION__ << endl;
     ORS_LOG(INFO) << "| RECVMD: " << pDepthMarketData->InstrumentID << "|" << pDepthMarketData->UpdateTime << endl;
-    strcpy(g_pUpdate->m_symbol, pDepthMarketData->InstrumentID);
-    g_pUpdate->m_lastTradedPrice = pDepthMarketData->LastPrice;
-    g_pUpdate->m_totalTradedQuantity = pDepthMarketData->Volume;
-    g_pUpdate->m_exchTS = parseTime(pDepthMarketData->UpdateTime, pDepthMarketData->UpdateMillisec);
-    g_pUpdate->m_lastTradedTime = g_pUpdate->m_exchTS;
-    g_pUpdate->m_lastTradedQuantity = 0;
-    g_pUpdate->m_totalTradedValue = pDepthMarketData->Turnover;
-    g_pUpdate->m_validBids = 0;
-    g_pUpdate->m_validAsks = 0;
+    strcpy(marketUpdate_.m_symbol, pDepthMarketData->InstrumentID);
+    marketUpdate_.m_lastTradedPrice = pDepthMarketData->LastPrice;
+    marketUpdate_.m_totalTradedQuantity = pDepthMarketData->Volume;
+    marketUpdate_.m_exchTS = parseTime(pDepthMarketData->UpdateTime, pDepthMarketData->UpdateMillisec);
+    marketUpdate_.m_lastTradedTime = marketUpdate_.m_exchTS;
+    marketUpdate_.m_lastTradedQuantity = 0;
+    marketUpdate_.m_totalTradedValue = pDepthMarketData->Turnover;
+    marketUpdate_.m_validBids = 0;
+    marketUpdate_.m_validAsks = 0;
     if (pDepthMarketData->BidVolume1 != 0)
     {
-        g_pUpdate->m_bidUpdates[g_pUpdate->m_validBids].price = pDepthMarketData->BidPrice1;
-        g_pUpdate->m_bidUpdates[g_pUpdate->m_validBids].quantity = pDepthMarketData->BidVolume1;
-        g_pUpdate->m_bidUpdates[g_pUpdate->m_validBids].orderCount = 1;
-        g_pUpdate->m_validBids++;
+        marketUpdate_.m_bidUpdates[marketUpdate_.m_validBids].price = pDepthMarketData->BidPrice1;
+        marketUpdate_.m_bidUpdates[marketUpdate_.m_validBids].quantity = pDepthMarketData->BidVolume1;
+        marketUpdate_.m_bidUpdates[marketUpdate_.m_validBids].orderCount = 1;
+        marketUpdate_.m_validBids++;
         if (pDepthMarketData->BidVolume2 != 0)
         {
-            g_pUpdate->m_bidUpdates[g_pUpdate->m_validBids].price = pDepthMarketData->BidPrice2;
-            g_pUpdate->m_bidUpdates[g_pUpdate->m_validBids].quantity = pDepthMarketData->BidVolume2;
-            g_pUpdate->m_bidUpdates[g_pUpdate->m_validBids].orderCount = 1;
-            g_pUpdate->m_validBids++;
+            marketUpdate_.m_bidUpdates[marketUpdate_.m_validBids].price = pDepthMarketData->BidPrice2;
+            marketUpdate_.m_bidUpdates[marketUpdate_.m_validBids].quantity = pDepthMarketData->BidVolume2;
+            marketUpdate_.m_bidUpdates[marketUpdate_.m_validBids].orderCount = 1;
+            marketUpdate_.m_validBids++;
 
             if (pDepthMarketData->BidVolume3 != 0)
             {
-                g_pUpdate->m_bidUpdates[g_pUpdate->m_validBids].price = pDepthMarketData->BidPrice3;
-                g_pUpdate->m_bidUpdates[g_pUpdate->m_validBids].quantity = pDepthMarketData->BidVolume3;
-                g_pUpdate->m_bidUpdates[g_pUpdate->m_validBids].orderCount = 1;
-                g_pUpdate->m_validBids++;
+                marketUpdate_.m_bidUpdates[marketUpdate_.m_validBids].price = pDepthMarketData->BidPrice3;
+                marketUpdate_.m_bidUpdates[marketUpdate_.m_validBids].quantity = pDepthMarketData->BidVolume3;
+                marketUpdate_.m_bidUpdates[marketUpdate_.m_validBids].orderCount = 1;
+                marketUpdate_.m_validBids++;
 
                 if (pDepthMarketData->BidVolume4 != 0)
                 {
-                    g_pUpdate->m_bidUpdates[g_pUpdate->m_validBids].price = pDepthMarketData->BidPrice4;
-                    g_pUpdate->m_bidUpdates[g_pUpdate->m_validBids].quantity = pDepthMarketData->BidVolume4;
-                    g_pUpdate->m_bidUpdates[g_pUpdate->m_validBids].orderCount = 1;
-                    g_pUpdate->m_validBids++;
+                    marketUpdate_.m_bidUpdates[marketUpdate_.m_validBids].price = pDepthMarketData->BidPrice4;
+                    marketUpdate_.m_bidUpdates[marketUpdate_.m_validBids].quantity = pDepthMarketData->BidVolume4;
+                    marketUpdate_.m_bidUpdates[marketUpdate_.m_validBids].orderCount = 1;
+                    marketUpdate_.m_validBids++;
 
                     if (pDepthMarketData->BidVolume5 != 0)
                     {
-                        g_pUpdate->m_bidUpdates[g_pUpdate->m_validBids].price = pDepthMarketData->BidPrice5;
-                        g_pUpdate->m_bidUpdates[g_pUpdate->m_validBids].quantity = pDepthMarketData->BidVolume5;
-                        g_pUpdate->m_bidUpdates[g_pUpdate->m_validBids].orderCount = 1;
-                        g_pUpdate->m_validBids++;
+                        marketUpdate_.m_bidUpdates[marketUpdate_.m_validBids].price = pDepthMarketData->BidPrice5;
+                        marketUpdate_.m_bidUpdates[marketUpdate_.m_validBids].quantity = pDepthMarketData->BidVolume5;
+                        marketUpdate_.m_bidUpdates[marketUpdate_.m_validBids].orderCount = 1;
+                        marketUpdate_.m_validBids++;
                     }
                 }
             }
@@ -207,42 +202,42 @@ void CMdSpi::OnRtnDepthMarketData(CThostFtdcDepthMarketDataField *pDepthMarketDa
 
     if (pDepthMarketData->AskVolume1 != 0)
     {
-        g_pUpdate->m_askUpdates[g_pUpdate->m_validAsks].price = pDepthMarketData->AskPrice1;
-        g_pUpdate->m_askUpdates[g_pUpdate->m_validAsks].quantity = pDepthMarketData->AskVolume1;
-        g_pUpdate->m_askUpdates[g_pUpdate->m_validAsks].orderCount = 1;
-        g_pUpdate->m_validAsks++;
+        marketUpdate_.m_askUpdates[marketUpdate_.m_validAsks].price = pDepthMarketData->AskPrice1;
+        marketUpdate_.m_askUpdates[marketUpdate_.m_validAsks].quantity = pDepthMarketData->AskVolume1;
+        marketUpdate_.m_askUpdates[marketUpdate_.m_validAsks].orderCount = 1;
+        marketUpdate_.m_validAsks++;
         if (pDepthMarketData->AskVolume2 != 0)
         {
-            g_pUpdate->m_askUpdates[g_pUpdate->m_validAsks].price = pDepthMarketData->AskPrice2;
-            g_pUpdate->m_askUpdates[g_pUpdate->m_validAsks].quantity = pDepthMarketData->AskVolume2;
-            g_pUpdate->m_askUpdates[g_pUpdate->m_validAsks].orderCount = 1;
-            g_pUpdate->m_validAsks++;
+            marketUpdate_.m_askUpdates[marketUpdate_.m_validAsks].price = pDepthMarketData->AskPrice2;
+            marketUpdate_.m_askUpdates[marketUpdate_.m_validAsks].quantity = pDepthMarketData->AskVolume2;
+            marketUpdate_.m_askUpdates[marketUpdate_.m_validAsks].orderCount = 1;
+            marketUpdate_.m_validAsks++;
             if (pDepthMarketData->AskVolume3 != 0)
             {
-                g_pUpdate->m_askUpdates[g_pUpdate->m_validAsks].price = pDepthMarketData->AskPrice3;
-                g_pUpdate->m_askUpdates[g_pUpdate->m_validAsks].quantity = pDepthMarketData->AskVolume3;
-                g_pUpdate->m_askUpdates[g_pUpdate->m_validAsks].orderCount = 1;
-                g_pUpdate->m_validAsks++;
+                marketUpdate_.m_askUpdates[marketUpdate_.m_validAsks].price = pDepthMarketData->AskPrice3;
+                marketUpdate_.m_askUpdates[marketUpdate_.m_validAsks].quantity = pDepthMarketData->AskVolume3;
+                marketUpdate_.m_askUpdates[marketUpdate_.m_validAsks].orderCount = 1;
+                marketUpdate_.m_validAsks++;
                 if (pDepthMarketData->AskVolume4 != 0)
                 {
-                    g_pUpdate->m_askUpdates[g_pUpdate->m_validAsks].price = pDepthMarketData->AskPrice4;
-                    g_pUpdate->m_askUpdates[g_pUpdate->m_validAsks].quantity = pDepthMarketData->AskVolume4;
-                    g_pUpdate->m_askUpdates[g_pUpdate->m_validAsks].orderCount = 1;
-                    g_pUpdate->m_validAsks++;
+                    marketUpdate_.m_askUpdates[marketUpdate_.m_validAsks].price = pDepthMarketData->AskPrice4;
+                    marketUpdate_.m_askUpdates[marketUpdate_.m_validAsks].quantity = pDepthMarketData->AskVolume4;
+                    marketUpdate_.m_askUpdates[marketUpdate_.m_validAsks].orderCount = 1;
+                    marketUpdate_.m_validAsks++;
                     if (pDepthMarketData->AskVolume5 != 0)
                     {
-                        g_pUpdate->m_askUpdates[g_pUpdate->m_validAsks].price = pDepthMarketData->AskPrice5;
-                        g_pUpdate->m_askUpdates[g_pUpdate->m_validAsks].quantity = pDepthMarketData->AskVolume5;
-                        g_pUpdate->m_askUpdates[g_pUpdate->m_validAsks].orderCount = 1;
-                        g_pUpdate->m_validAsks++;
+                        marketUpdate_.m_askUpdates[marketUpdate_.m_validAsks].price = pDepthMarketData->AskPrice5;
+                        marketUpdate_.m_askUpdates[marketUpdate_.m_validAsks].quantity = pDepthMarketData->AskVolume5;
+                        marketUpdate_.m_askUpdates[marketUpdate_.m_validAsks].orderCount = 1;
+                        marketUpdate_.m_validAsks++;
                     }
                 }
             }
         }
     }
-    // g_pUpdate->printLine();
-    g_pMDHandler->ProcessMDUpdate((char *)g_pUpdate);
-    g_pORS->getRms().updateLTPFromMD(g_pUpdate);
+    // marketUpdate_.printLine();
+    mdHandler_.ProcessMDUpdate(reinterpret_cast<char*>(&marketUpdate_));
+    server_.getRms().updateLTPFromMD(&marketUpdate_);
 }
 
 bool CMdSpi::IsErrorRspInfo(CThostFtdcRspInfoField *pRspInfo)

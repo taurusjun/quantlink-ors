@@ -4,16 +4,20 @@
 #include <vector>
 
 #include "transport/OrsTransport.h"
+#include "md/MarketDataSink.h"
 
 namespace ors {
 
-class InMemoryOrsTransport final : public OrsTransport {
+class InMemoryOrsTransport final : public OrsTransport, public MarketDataSink {
  public:
   bool start(RequestHandler requestHandler,
              AccountQueryHandler accountQueryHandler,
              ClientRegisterHandler clientRegisterHandler) override;
   bool sendResponse(const ::ors::infra::ResponseMsg& response) override;
   bool sendMarketData(const ::ors::md::MarketUpdateNew& update) override;
+  bool send(const ::ors::md::MarketUpdateNew& update) override {
+    return sendMarketData(update);
+  }
   bool sendSession(const SessionEvent& event) override;
   bool sendAccount(const AccountSnapshot& snapshot) override;
   bool sendClientRegisterResponse(const ClientRegisterResult& result) override;

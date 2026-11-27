@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <memory>
 #include <map>
 #include <mutex>
 #include <string>
@@ -88,7 +89,9 @@ typedef std::map<std::string, std::uint32_t>::iterator OrderAccountMapIter2;
 class ORSServer : public CThostFtdcTraderSpi
 {
 public:
-    ORSServer(::ors::OrsConfig config, ::ors::OrsTransport& transport);
+    ORSServer(::ors::OrsConfig config, ::ors::OrsTransport& transport,
+              MDHandler& mdHandler,
+              ::ors::md::MarketUpdateNew& marketUpdate);
     ~ORSServer();
     void ProcessRequest(::ors::infra::RequestMsg *);
     void Login();
@@ -130,9 +133,19 @@ public:
     void logOrderInfoResponse(const char *, OrderInfo &ordinfo,
                               ::ors::infra::ResponseMsg *resp);
 
-    CThostFtdcTraderApi *m_pUserTradeApi;
-    CThostFtdcMdApi *m_pUserMDApi;
-    CMdSpi *m_pUserMDSpi;
+    struct TraderApiDeleter {
+        void operator()(CThostFtdcTraderApi* api) const noexcept {
+            if (api != nullptr) api->Release();
+        }
+    };
+    struct MdApiDeleter {
+        void operator()(CThostFtdcMdApi* api) const noexcept {
+            if (api != nullptr) api->Release();
+        }
+    };
+    std::unique_ptr<CThostFtdcTraderApi, TraderApiDeleter> m_pUserTradeApi;
+    std::unique_ptr<CThostFtdcMdApi, MdApiDeleter> m_pUserMDApi;
+    std::unique_ptr<CMdSpi> m_pUserMDSpi;
 
     virtual void OnFrontConnected();
     virtual void OnFrontDisconnected(int nReason);
@@ -163,6 +176,8 @@ public:
 private:
     ::ors::OrsConfig config_;
     ::ors::OrsTransport& transport_;
+    MDHandler& mdHandler_;
+    ::ors::md::MarketUpdateNew& marketUpdate_;
     inline __attribute__((always_inline)) void RemoveFromMap(const char *exchid, std::int32_t localid);
     inline __attribute__((always_inline)) bool GetOrderInfo(const char *orderref, OrderInfo &orderinfo);
 

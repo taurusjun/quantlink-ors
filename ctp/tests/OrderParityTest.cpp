@@ -11,7 +11,9 @@ int main() {
   config.orsId = "ors-test";
 
   ::ors::InMemoryOrsTransport transport;
-  ORSServer server(config, transport);
+  MDHandler mdHandler(transport);
+  ::ors::md::MarketUpdateNew marketUpdate{};
+  ORSServer server(config, transport, mdHandler, marketUpdate);
 
   ::ors::ClientRegisterRequest registration;
   registration.requestId = 1;

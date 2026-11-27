@@ -59,7 +59,6 @@ target_compile_options(ors_rms PRIVATE -Wall -Wextra -Wpedantic)
 
 add_library(ors_engine STATIC
     core/ORSServer.cpp
-    core/RuntimeGlobals.cpp
     core/MdSpi.cpp
     core/MDHandler.cpp
     core/ORSServerCallbacks.cpp
