@@ -29,7 +29,7 @@ class AeronOrsTransport final : public OrsTransport, public MarketDataSink {
   bool sendClientRegisterResponse(const ClientRegisterResult& result) override;
   void stop() override;
 
-  void poll(int fragmentLimit);
+  int poll(int fragmentLimit);
 
  private:
   bool publish(int streamId, std::size_t length);

@@ -75,8 +75,8 @@ bool AeronOrsTransport::sendClientRegisterResponse(
 
 void AeronOrsTransport::stop() {}
 
-void AeronOrsTransport::poll(int fragmentLimit) {
-  subscriber_.poll(fragmentLimit,
+int AeronOrsTransport::poll(int fragmentLimit) {
+  return subscriber_.poll(fragmentLimit,
                    [this](int, const char* data, std::size_t length) {
                      sbe::MessageHeader header;
                      header.wrap(const_cast<char*>(data), 0, 0, length);

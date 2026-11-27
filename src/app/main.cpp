@@ -2,6 +2,7 @@
 #include <exception>
 #include <iostream>
 #include <string>
+#include <chrono>
 #include <thread>
 
 #include "marketdata/MDHandler.h"
@@ -43,6 +44,8 @@ int main(int argc, char** argv) {
     std::thread pollThread([&] {
       while (running.load(std::memory_order_relaxed)) {
         transport.poll(10);
+        // Avoid BusySpinIdleStrategy-style CPU burn when the feed is idle.
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
       }
     });
 
