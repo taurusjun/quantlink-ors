@@ -25,8 +25,8 @@ bool OrderService::crossCheck(const ::ors::infra::RequestMsg& request) {
           (request.Price >= open.Price || request.Price == 0))) &&
         std::strcmp(request.Contract_Description.Symbol, open.ScripCode) == 0) {
       log::info("ors.order.cross_reject",
-                {{"open_order_id", static_cast<std::uint64_t>(entry.first)},
-                 {"new_order_id", static_cast<std::uint64_t>(request.OrderID)}});
+                {{"open_order_id", std::to_string(entry.first)},
+                 {"new_order_id", std::to_string(request.OrderID)}});
       return true;
     }
   }
@@ -58,7 +58,7 @@ void OrderService::reject(const ::ors::infra::RequestMsg& request,
   std::strncpy(response.AccountID, request.AccountID,
                sizeof(response.AccountID) - 1);
   log::warn("ors.order.rejected",
-            {{"order_id", static_cast<std::uint64_t>(request.OrderID)},
+            {{"order_id", std::to_string(request.OrderID)},
              {"reason", reason == nullptr ? "" : reason}});
   if (push_) {
     push_(&response);

@@ -13,6 +13,13 @@ namespace ors::base {
 
 struct Metrics;
 
+struct LogContext {
+  std::string service;
+  std::string instance;
+  std::string host;
+  std::uint32_t pid{0};
+};
+
 /// One JSONL field. Numeric values stay JSON numbers.
 struct LogField {
   std::string key;
@@ -35,9 +42,11 @@ struct LogField {
 };
 
 void logEvent(spdlog::logger& logger, spdlog::level::level_enum level,
-              std::string_view event, std::initializer_list<LogField> fields);
+              std::string_view event, const LogContext& context,
+              std::initializer_list<LogField> fields);
 
-void logMetrics(spdlog::logger& logger, const Metrics& metrics);
+void logMetrics(spdlog::logger& logger, const Metrics& metrics,
+                const LogContext& context);
 
 /// Creates the production JSONL logger: async queue 8192, overrun_oldest,
 /// rotating 100MB x 5. Throws on an unwritable path.

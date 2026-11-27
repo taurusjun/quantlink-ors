@@ -16,7 +16,8 @@ namespace ors::log {
 
 using LogField = base::LogField;
 
-void init(std::shared_ptr<spdlog::logger> logger);
+void init(std::shared_ptr<spdlog::logger> logger,
+          const base::LogContext& context);
 void info(std::string_view event, std::initializer_list<LogField> fields);
 void warn(std::string_view event, std::initializer_list<LogField> fields);
 void error(std::string_view event, std::initializer_list<LogField> fields);

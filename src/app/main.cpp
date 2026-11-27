@@ -1,9 +1,11 @@
 #include <atomic>
 #include <exception>
+#include <filesystem>
 #include <iostream>
 #include <string>
 #include <chrono>
 #include <thread>
+#include <unistd.h>
 
 #include "marketdata/MDHandler.h"
 #include "session/ORSServer.h"
@@ -12,6 +14,24 @@
 #include "marketupdateNew.h"
 #include "transport/AeronClient.h"
 #include "transport/AeronOrsTransport.h"
+
+namespace {
+
+std::string hostName() {
+  char host[256]{};
+  if (gethostname(host, sizeof(host)) != 0) {
+    return "unknown";
+  }
+  return host;
+}
+
+std::string instanceName(const ::ors::OrsConfig& config) {
+  const std::filesystem::path logPath(config.logPath);
+  const std::string directory = logPath.parent_path().filename().string();
+  return directory.empty() ? config.orsId : directory;
+}
+
+}  // namespace
 
 int main(int argc, char** argv) {
   if (argc != 2 && !(argc == 3 && std::string(argv[1]) == "--config")) {
@@ -22,7 +42,13 @@ int main(int argc, char** argv) {
 
   try {
     const ::ors::OrsConfig config = ::ors::OrsConfig::load(configPath);
-    ::ors::log::init(::ors::base::createLogger("ors", config.logPath));
+    ::ors::base::LogContext logContext;
+    logContext.service = "ors";
+    logContext.instance = instanceName(config);
+    logContext.host = hostName();
+    logContext.pid = static_cast<std::uint32_t>(getpid());
+    ::ors::log::init(::ors::base::createLogger("ors", config.logPath),
+                     logContext);
     ::ors::AeronClient aeron(config);
     ::ors::AeronOrsTransport transport(config, aeron, aeron);
     MDHandler mdHandler(transport);

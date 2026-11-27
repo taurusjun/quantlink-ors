@@ -7,6 +7,7 @@ namespace ors::log {
 namespace {
 
 std::shared_ptr<spdlog::logger> g_logger;
+base::LogContext g_context;
 std::mutex g_initMutex;
 
 void emit(spdlog::level::level_enum level, std::string_view event,
@@ -14,13 +15,15 @@ void emit(spdlog::level::level_enum level, std::string_view event,
   if (!g_logger) {
     return;
   }
-  base::logEvent(*g_logger, level, event, fields);
+  base::logEvent(*g_logger, level, event, g_context, fields);
 }
 
 }  // namespace
 
-void init(std::shared_ptr<spdlog::logger> logger) {
+void init(std::shared_ptr<spdlog::logger> logger,
+          const base::LogContext& context) {
   std::lock_guard<std::mutex> lock(g_initMutex);
+  g_context = context;
   g_logger = std::move(logger);
 }
 
@@ -40,7 +43,7 @@ void metrics(const base::Metrics& metrics) {
   if (!g_logger) {
     return;
   }
-  base::logMetrics(*g_logger, metrics);
+  base::logMetrics(*g_logger, metrics, g_context);
 }
 
 LegacyLine::LegacyLine(Level level, std::string event)
@@ -57,7 +60,7 @@ LegacyLine::~LegacyLine() {
                                    : level_ == Level::WARN
                                          ? spdlog::level::warn
                                          : spdlog::level::info;
-  base::logEvent(*g_logger, converted, event_,
+  base::logEvent(*g_logger, converted, event_, g_context,
                  {LogField("message", stream_.str())});
 }
 

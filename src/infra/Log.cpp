@@ -7,9 +7,11 @@
 #include <filesystem>
 #include <iomanip>
 #include <mutex>
+#include <pthread.h>
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <unistd.h>
 
 #include <spdlog/async.h>
 #include <spdlog/sinks/rotating_file_sink.h>
@@ -102,19 +104,26 @@ std::string levelName(spdlog::level::level_enum level) {
 std::string nowIso8601() {
   const auto now = std::chrono::system_clock::now();
   const std::time_t seconds = std::chrono::system_clock::to_time_t(now);
-  std::tm local{};
-  localtime_r(&seconds, &local);
+  std::tm utc{};
+  gmtime_r(&seconds, &utc);
 
   char date[32];
-  std::strftime(date, sizeof(date), "%Y-%m-%dT%H:%M:%S", &local);
-  char zone[8];
-  std::strftime(zone, sizeof(zone), "%z", &local);
+  std::strftime(date, sizeof(date), "%Y-%m-%dT%H:%M:%S", &utc);
 
   const auto millis = std::chrono::duration_cast<std::chrono::milliseconds>(
                           now.time_since_epoch()).count() % 1000;
   std::ostringstream out;
-  out << date << '.' << std::setw(3) << std::setfill('0') << millis << zone;
+  out << date << '.' << std::setw(3) << std::setfill('0') << millis << 'Z';
   return out.str();
+}
+
+std::string currentThreadName() {
+  char name[32]{};
+  if (pthread_getname_np(pthread_self(), name, sizeof(name)) != 0 ||
+      name[0] == '\0') {
+    return "unknown";
+  }
+  return name;
 }
 
 std::string fieldValue(const LogField& field) {
@@ -148,10 +157,31 @@ std::string fieldValue(const LogField& field) {
 }  // namespace
 
 void logEvent(spdlog::logger& logger, spdlog::level::level_enum level,
-              std::string_view event, std::initializer_list<LogField> fields) {
+              std::string_view event, const LogContext& context,
+              std::initializer_list<LogField> fields) {
   std::ostringstream json;
-  json << "{\"ts\":\"" << nowIso8601() << "\",\"level\":\""
-       << levelName(level) << "\",\"event\":\"" << jsonEscape(event) << "\"";
+  const auto pid = context.pid != 0 ? context.pid
+                                   : static_cast<std::uint32_t>(getpid());
+  const std::string host = context.host.empty() ? "unknown" : context.host;
+  const std::string service =
+      context.service.empty() ? "unknown" : context.service;
+  const std::string instance =
+      context.instance.empty() ? "unknown" : context.instance;
+
+  bool hasMessage = false;
+  for (const auto& field : fields) {
+    hasMessage = hasMessage || field.key == "message";
+  }
+
+  json << "{\"schema_version\":\"1\",\"ts\":\"" << nowIso8601()
+       << "\",\"level\":\"" << levelName(level) << "\",\"service\":\""
+       << jsonEscape(service) << "\",\"instance\":\"" << jsonEscape(instance)
+       << "\",\"host\":\"" << jsonEscape(host) << "\",\"pid\":" << pid
+       << ",\"thread\":\"" << jsonEscape(currentThreadName())
+       << "\",\"event\":\"" << jsonEscape(event) << "\"";
+  if (!hasMessage) {
+    json << ",\"message\":\"" << jsonEscape(event) << "\"";
+  }
   for (const auto& field : fields) {
     json << ",\"" << jsonEscape(field.key) << "\":" << fieldValue(field);
   }
@@ -159,9 +189,10 @@ void logEvent(spdlog::logger& logger, spdlog::level::level_enum level,
   logger.log(level, "{}", json.str());
 }
 
-void logMetrics(spdlog::logger& logger, const Metrics& metrics) {
+void logMetrics(spdlog::logger& logger, const Metrics& metrics,
+                const LogContext& context) {
   constexpr auto kRelaxed = std::memory_order_relaxed;
-  logEvent(logger, spdlog::level::info, "metrics",
+  logEvent(logger, spdlog::level::info, "metrics", context,
            {LogField("orders_received", metrics.ordersReceived.load(kRelaxed)),
             LogField("orders_sent", metrics.ordersSent.load(kRelaxed)),
             LogField("ctp_order_callbacks", metrics.ctpOrderCallbacks.load(kRelaxed)),
