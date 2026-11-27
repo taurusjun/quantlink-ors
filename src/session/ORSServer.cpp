@@ -54,6 +54,33 @@ extern int iInstrumentID;
 
 /******************* ADMIN STUFF ****************************/
 
+namespace {
+
+std::string instrumentStatusName(char status) {
+    switch (status) {
+        case THOST_FTDC_IS_BeforeTrading:
+            return "before_trading";
+        case THOST_FTDC_IS_NoTrading:
+            return "no_trading";
+        case THOST_FTDC_IS_Continous:
+            return "continuous_trading";
+        case THOST_FTDC_IS_AuctionOrdering:
+            return "auction_ordering";
+        case THOST_FTDC_IS_AuctionBalance:
+            return "auction_balance";
+        case THOST_FTDC_IS_AuctionMatch:
+            return "auction_match";
+        case THOST_FTDC_IS_Closed:
+            return "closed";
+        case THOST_FTDC_IS_TransactionProcessing:
+            return "transaction_processing";
+        default:
+            return "unknown";
+    }
+}
+
+}  // namespace
+
 void ORSServer::registerStats()
 {
     ::ors::metrics().init(
@@ -537,9 +564,12 @@ void ORSServer::OnRtnInstrumentStatus(CThostFtdcInstrumentStatusField *pInstrume
         return;
     }
     log::info("ors.instrument.status",
-              {{"instrument", pInstrumentStatus->InstrumentID},
+              {{"type", "market_data"},
+               {"instrument", pInstrumentStatus->InstrumentID},
                {"exchange_id", pInstrumentStatus->ExchangeID},
-               {"instrument_status", pInstrumentStatus->InstrumentStatus},
+               {"instrument_status", instrumentStatusName(pInstrumentStatus->InstrumentStatus)},
+               {"instrument_status_code", static_cast<int>(
+                    static_cast<unsigned char>(pInstrumentStatus->InstrumentStatus))},
                {"message", "instrument status update"}});
     if (m_symbolMap.find(std::string(pInstrumentStatus->InstrumentID)) == m_symbolMap.end())
     {
