@@ -1,20 +1,9 @@
-#ifndef _MD_HANDLER_H
-#define _MD_HANDLER_H
+#pragma once
 
-#include <string.h>
-#include <unordered_map>
-#include <map>
-#include <list>
+#include <cstdint>
 
 #include "marketupdateNew.h"
 #include "md/MarketDataSink.h"
-
-#include "MdSpi.h"
-
-#define MD_SHMKEY 871 // lzd change 871 to 872
-#define MD_SHMSIZE 100000
-
-using namespace ors::md;
 
 class MDHandler
 {
@@ -24,9 +13,7 @@ public:
     void ProcessMDUpdate(char *);
 
 private:
-    uint64_t m_seqNum;
-    uint64_t m_exchTS;
+    std::uint64_t m_seqNum{0};
+    std::uint64_t m_exchTS{0};
     ::ors::MarketDataSink& sink_;
 };
-
-#endif

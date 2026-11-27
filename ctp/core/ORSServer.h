@@ -1,19 +1,15 @@
-#ifndef _ORS_SERVER_H
-#define _ORS_SERVER_H
+#pragma once
 
-
+#include <cstdint>
+#include <map>
+#include <mutex>
+#include <string>
+#include <thread>
+#include <unordered_map>
+#include <vector>
 
 #include "ThostFtdcTraderApi.h"
 #include "MdSpi.h"
-
-#include "iostream"
-#include <unordered_map>
-#include <thread>
-#include <map>
-#include <cstdint>
-#include <vector>
-
-#include <mutex>
 #include "MDHandler.h"
 #include "orderresponse.h"
 #include "marketupdateNew.h"
@@ -29,10 +25,6 @@
 #include "query/AccountQueryState.h"
 #include "transport/OrsTransport.h"
 
-using namespace std;
-using namespace ors::infra;
-using namespace ors;
-using namespace ors::md;
 
 typedef struct _masterData
 {
@@ -63,7 +55,7 @@ typedef std::unordered_map<std::string, MasterData>::iterator SymbolMapIter;
 
 typedef struct _orderInfo
 {
-    RequestType requestType;
+    ::ors::infra::RequestType requestType;
     bool orderSent;
     unsigned long localID;
     char exchID[31];
@@ -79,7 +71,7 @@ typedef struct _orderInfo
     unsigned long ModQtySent;
     // to keep track if the order is completely traded or open
     unsigned long openQty;
-    uint64_t sendTime;
+    std::uint64_t sendTime;
     int frontId;
     int sessionId;
     char exchange;
@@ -90,25 +82,25 @@ typedef struct _orderInfo
 typedef std::map<unsigned long, OrderInfo> OrderAccountMap;
 typedef std::map<unsigned long, OrderInfo>::iterator OrderAccountMapIter;
 
-typedef std::map<std::string, uint32_t> OrderAccountMap2;
-typedef std::map<std::string, uint32_t>::iterator OrderAccountMapIter2;
+typedef std::map<std::string, std::uint32_t> OrderAccountMap2;
+typedef std::map<std::string, std::uint32_t>::iterator OrderAccountMapIter2;
 
 class ORSServer : public CThostFtdcTraderSpi
 {
 public:
     ORSServer(::ors::OrsConfig config, ::ors::OrsTransport& transport);
     ~ORSServer();
-    void ProcessRequest(RequestMsg *);
+    void ProcessRequest(::ors::infra::RequestMsg *);
     void Login();
     void Start();
     void Stop();
     void RegisterClient(const ::ors::ClientRegisterRequest&);
     void QueryAccount(const ::ors::AccountQueryRequest&);
-    void RejectOrder(RequestMsg *, const char *);
-    inline __attribute__((always_inline)) void PushUpdate(ResponseMsg *);
-    inline __attribute__((always_inline)) bool OrderCrossCheck(RequestMsg *);
-    void RmsError(ResponseType, uint32_t, uint32_t);
-    void RmsWarning(ResponseType, uint32_t, uint32_t);
+    void RejectOrder(::ors::infra::RequestMsg *, const char *);
+    inline __attribute__((always_inline)) void PushUpdate(::ors::infra::ResponseMsg *);
+    inline __attribute__((always_inline)) bool OrderCrossCheck(::ors::infra::RequestMsg *);
+    void RmsError(::ors::infra::ResponseType, std::uint32_t, std::uint32_t);
+    void RmsWarning(::ors::infra::ResponseType, std::uint32_t, std::uint32_t);
 
     ::ors::infra::RmsImpl &getRms()
     {
@@ -136,7 +128,7 @@ public:
     int iNextOrderRef;
 
     void logOrderInfoResponse(const char *, OrderInfo &ordinfo,
-                              ResponseMsg *resp);
+                              ::ors::infra::ResponseMsg *resp);
 
     CThostFtdcTraderApi *m_pUserTradeApi;
     CThostFtdcMdApi *m_pUserMDApi;
@@ -171,17 +163,19 @@ public:
 private:
     ::ors::OrsConfig config_;
     ::ors::OrsTransport& transport_;
-    inline __attribute__((always_inline)) void RemoveFromMap(const char *exchid, int32_t localid);
+    inline __attribute__((always_inline)) void RemoveFromMap(const char *exchid, std::int32_t localid);
     inline __attribute__((always_inline)) bool GetOrderInfo(const char *orderref, OrderInfo &orderinfo);
 
-    void SetCombOffsetFlag(CThostFtdcInputOrderField &req, RequestMsg *request, char &flag, int &orderType);
+    void SetCombOffsetFlag(CThostFtdcInputOrderField &req,
+                           ::ors::infra::RequestMsg *request,
+                           char &flag, int &orderType);
     std::mutex m_ordLocalMapLock;
     void registerStats();
-    inline __attribute__((always_inline)) void SendNewOrder(RequestMsg *);
-    inline __attribute__((always_inline)) void SendModifyOrder(RequestMsg *);
-    inline __attribute__((always_inline)) void SendCancelOrder(RequestMsg *);
+    inline __attribute__((always_inline)) void SendNewOrder(::ors::infra::RequestMsg *);
+    inline __attribute__((always_inline)) void SendModifyOrder(::ors::infra::RequestMsg *);
+    inline __attribute__((always_inline)) void SendCancelOrder(::ors::infra::RequestMsg *);
     void DoLoggOff();
-    void updatePosition(OrderInfo &ordinfo, ResponseMsg *resp);
+    void updatePosition(OrderInfo &ordinfo, ::ors::infra::ResponseMsg *resp);
 
     void ReqUserLogin();
     void Authenticate(); // add by pqr 20230213
@@ -224,7 +218,5 @@ private:
 
     std::string m_statsFile;
 
-    uint64_t tempTimeStamp;
+    std::uint64_t tempTimeStamp{0};
 };
-
-#endif

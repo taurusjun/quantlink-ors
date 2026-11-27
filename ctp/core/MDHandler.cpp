@@ -49,7 +49,7 @@ void MDHandler::ProcessMDUpdate(char *msg)
         count++;
     }
 
-    MarketUpdateNew *update = (MarketUpdateNew *)msg;
+    ors::md::MarketUpdateNew *update = (ors::md::MarketUpdateNew *)msg;
     // cout << "MDUP|" << up->m_seqnum << "|" << up->m_symbol << endl ;
     /*
      int64_t prevTTQ = TTQMap[std::string(up->m_symbol)];
