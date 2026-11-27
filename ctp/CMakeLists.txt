@@ -66,6 +66,7 @@ add_library(ors_engine STATIC
     core/PositionTable.cpp
     control/ClientRegistry.cpp
     control/OpenOrderGuard.cpp
+    execution/OffsetPolicy.cpp
     query/AccountQueryState.cpp
     query/QueryMapping.cpp
     log/Log.cpp
@@ -155,4 +156,5 @@ ors_add_test(ctp_query_mapping tests/QueryMappingTest.cpp)
 ors_add_test(ctp_ors_codec tests/OrsCodecTest.cpp LIBS ors_codec)
 ors_add_test(ctp_aeron_transport tests/AeronOrsTransportTest.cpp LIBS ors_transport)
 ors_add_test(ctp_md_handler tests/MDHandlerTest.cpp)
+ors_add_test(ctp_offset_policy tests/OffsetPolicyTest.cpp)
 ors_add_test(ctp_order_parity tests/OrderParityTest.cpp)

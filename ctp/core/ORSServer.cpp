@@ -11,6 +11,7 @@
 #include "rmsimpl.hpp"
 #include "query/QueryMapping.h"
 #include "control/OpenOrderGuard.h"
+#include "execution/OffsetPolicy.h"
 
 using namespace std;
 using namespace ors::infra;
@@ -399,21 +400,10 @@ void ORSServer::SetCombOffsetFlag(CThostFtdcInputOrderField &req, RequestMsg *re
         return;
     }
 
-    orderType = static_cast<int>(reservation.action);
-    switch (reservation.action) {
-    case ::ors::PositionAction::CloseToday:
-        flag = (request->Exchange_Type == CHINA_SHFE)
-                   ? THOST_FTDC_OF_CloseToday
-                   : THOST_FTDC_OF_Close;
-        break;
-    case ::ors::PositionAction::CloseYesterday:
-        flag = THOST_FTDC_OF_Close;
-        break;
-    case ::ors::PositionAction::Open:
-    default:
-        flag = THOST_FTDC_OF_Open;
-        break;
-    }
+    const ::ors::OffsetDecision decision =
+        ::ors::chooseOffset(reservation, request->Exchange_Type);
+    flag = decision.flag;
+    orderType = decision.orderType;
 }
 
 void ORSServer::SendNewOrder(RequestMsg *request)
