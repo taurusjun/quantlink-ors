@@ -58,6 +58,14 @@ void AccountQueryService::onResponse(CThostFtdcTradingAccountField* account,
 
   AccountSnapshot snapshot = mapAccountSnapshot(*account, *sdkRequestId, config_);
   snapshot.timestamp = nowNanos();
+  log::info("ors.account.snapshot",
+            {{"type", "account"},
+             {"account_id", snapshot.accountId},
+             {"request_id", std::to_string(snapshot.requestId)},
+             {"balance", snapshot.balance},
+             {"available", snapshot.available},
+             {"margin", snapshot.margin},
+             {"message", "account snapshot returned"}});
   transport_.sendAccount(snapshot);
   state_.finish();
 }
