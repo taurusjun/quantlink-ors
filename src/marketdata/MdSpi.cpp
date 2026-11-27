@@ -35,31 +35,30 @@ void CMdSpi::markLogin(int value) {
 
 void CMdSpi::OnRspError(CThostFtdcRspInfoField *pRspInfo, int nRequestID, bool bIsLast)
 {
-    tempTimeStamp = ::ors::nowNanos();
-    ORS_LOG(INFO) << "|" << tempTimeStamp << "|" << __FUNCTION__ << endl;
     IsErrorRspInfo(pRspInfo);
 }
 
 void CMdSpi::OnFrontDisconnected(int nReason)
 {
-    tempTimeStamp = ::ors::nowNanos();
-    ORS_LOG(INFO) << "|" << tempTimeStamp << "|" << __FUNCTION__ << endl;
-    ORS_LOG(INFO) << "|" << tempTimeStamp << "|"
-               << "Reason = " << nReason << endl;
+    ::ors::log::warn("ors.md.disconnected",
+                     {{"type", "market_data"},
+                      {"error_code", std::to_string(nReason)},
+                      {"message", "market data front disconnected"}});
 }
 
 void CMdSpi::OnHeartBeatWarning(int nTimeLapse)
 {
-    tempTimeStamp = ::ors::nowNanos();
-    ORS_LOG(INFO) << "|" << tempTimeStamp << "|" << __FUNCTION__ << endl;
-    ORS_LOG(INFO) << "|" << tempTimeStamp << "|"
-               << "nTimeLapse = " << nTimeLapse << endl;
+    ::ors::log::warn("ors.md.heartbeat_warning",
+                     {{"type", "market_data"},
+                      {"duration_us", static_cast<double>(nTimeLapse) * 1000000.0},
+                      {"message", "market data heartbeat warning"}});
 }
 
 void CMdSpi::OnFrontConnected()
 {
-    tempTimeStamp = ::ors::nowNanos();
-    ORS_LOG(INFO) << "|" << tempTimeStamp << "|" << __FUNCTION__ << endl;
+    ::ors::log::info("ors.md.connected",
+                     {{"type", "market_data"},
+                      {"message", "market data front connected"}});
     ReqUserLogin((char *)server_.m_BROKER_ID.c_str(), (char *)server_.m_INVESTOR_ID.c_str(), (char *)server_.m_PASSWORD.c_str());
 }
 
@@ -76,47 +75,40 @@ void CMdSpi::ReqUserLogin(TThostFtdcBrokerIDType BROKER_ID, TThostFtdcInvestorID
         m_iLoginMD.store(!iResult);
     }
     loginCv_.notify_all();
-    tempTimeStamp = ::ors::nowNanos();
-    ORS_LOG(INFO) << "|" << tempTimeStamp << "|"
-               << "ReqUserLogin CMdSpi " << ((iResult == 0) ? "done " : "not done ") << endl;
     if (iResult)
     {
-        tempTimeStamp = ::ors::nowNanos();
-        ORS_LOG(INFO) << "|" << tempTimeStamp << "|"
-                   << "iResult " << iResult << std::endl;
+        ::ors::log::error("ors.md.login_failed",
+                          {{"type", "market_data"},
+                           {"error_code", std::to_string(iResult)},
+                           {"message", "market data login request failed"}});
         return;
     }
+    ::ors::log::info("ors.md.login",
+                     {{"type", "market_data"},
+                      {"result", iResult},
+                      {"message", "market data login requested"}});
 }
 
 void CMdSpi::OnRspUserLogin(CThostFtdcRspUserLoginField *pRspUserLogin, CThostFtdcRspInfoField *pRspInfo, int nRequestID, bool bIsLast)
 {
     const char *szLocalDate;
     long lDate;
-    tempTimeStamp = ::ors::nowNanos();
-    ORS_LOG(INFO) << "|" << tempTimeStamp << "|"
-               << "|" << __FUNCTION__ << endl;
-    ORS_LOG(INFO) << "|" << tempTimeStamp << "|"
-               << "OnRspUserLogin" << endl;
-    ORS_LOG(INFO) << "|" << tempTimeStamp << "|"
-               << "ErrorCode=" << pRspInfo->ErrorID << " ErrorMsg=" << pRspInfo->ErrorMsg << endl;
-    ORS_LOG(INFO) << "|" << tempTimeStamp << "|"
-               << "RequestID=" << nRequestID << " Chain=" << bIsLast << endl;
     if (bIsLast && !IsErrorRspInfo(pRspInfo))
     {
+        ::ors::log::info("ors.md.login",
+                         {{"type", "market_data"},
+                          {"request_id", std::to_string(nRequestID)},
+                          {"message", "market data login accepted"}});
         // szLocalDate = m_pUserApi->GetTradingDay();
         std::string cur_day = std::string{};
 
         lDate = atol(cur_day.c_str());
-        tempTimeStamp = ::ors::nowNanos();
-        ORS_LOG(INFO) << "|" << tempTimeStamp << "|"
-                   << "Trading day " << cur_day.c_str() << endl;
+
         tepoch = {0};
         tepoch.tm_year = (lDate / 10000) - 1900;
         tepoch.tm_mon = (lDate / 100) % 100 - 1;
         tepoch.tm_mday = (lDate) % 100;
-        tempTimeStamp = ::ors::nowNanos();
-        ORS_LOG(INFO) << "|" << tempTimeStamp << "|"
-                   << "Year " << tepoch.tm_year + 1900 << " Mon " << tepoch.tm_mon << " Day " << tepoch.tm_mday << std::endl;
+
         // SubscribeMarketData();
     }
 }
@@ -154,8 +146,10 @@ void CMdSpi::OnRspSubMarketData(CThostFtdcSpecificInstrumentField *pSpecificInst
 
 void CMdSpi::OnRspUnSubMarketData(CThostFtdcSpecificInstrumentField *pSpecificInstrument, CThostFtdcRspInfoField *pRspInfo, int nRequestID, bool bIsLast)
 {
-    tempTimeStamp = ::ors::nowNanos();
-    ORS_LOG(INFO) << "|" << tempTimeStamp << "|" << __FUNCTION__ << endl;
+    ::ors::log::info("ors.md.unsubscribe",
+                     {{"type", "market_data"},
+                      {"instrument", pSpecificInstrument == nullptr ? "" : pSpecificInstrument->InstrumentID},
+                      {"message", "market data unsubscribed"}});
 }
 
 time_t parseTime(char szTimeInfo[], int iMillisecs)
@@ -268,9 +262,11 @@ bool CMdSpi::IsErrorRspInfo(CThostFtdcRspInfoField *pRspInfo)
     bool bResult = ((pRspInfo) && (pRspInfo->ErrorID != 0));
     if (bResult)
     {
-        tempTimeStamp = ::ors::nowNanos();
-        ORS_LOG(INFO) << "|" << tempTimeStamp << "|"
-                   << "|ErrorID=" << pRspInfo->ErrorID << ", ErrorMsg=" << pRspInfo->ErrorMsg << endl;
+        ::ors::log::error("ors.md.error",
+                          {{"type", "market_data"},
+                           {"error_code", std::to_string(pRspInfo->ErrorID)},
+                           {"error_message", pRspInfo->ErrorMsg},
+                           {"message", "market data callback error"}});
     }
     return bResult;
 }

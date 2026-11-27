@@ -93,7 +93,7 @@ std::string eventType(std::string_view event) {
       event.find("OrderService") != std::string_view::npos) {
     return "order";
   }
-  if (starts("ors.md.") || starts("market.") ||
+  if (starts("ors.md.") || starts("ors.instrument.") || starts("market.") ||
       event.find("MarketData") != std::string_view::npos ||
       event.find("DepthMarket") != std::string_view::npos ||
       event.find("SubMarket") != std::string_view::npos) {

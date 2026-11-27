@@ -708,9 +708,8 @@ void ORSServer::OnRspQryInstrument(CThostFtdcInstrumentField *pInstrument, CThos
     }
     if (bIsLast)
     {
-        tempTimeStamp = ::ors::nowNanos();
-        ORS_LOG(INFO) << "--->>> " << tempTimeStamp << "|"
-                   << "Instrument query complete" << std::endl;
+        log::info("ors.instrument.query_response",
+                  {{"message", "instrument query complete"}});
         m_pUserMDSpi->SubscribeMarketData();
         rms_.impl().setExchangeInstrDefinitionMap(m_symbolMap, true, true, false);
         ReqQryPosition();
