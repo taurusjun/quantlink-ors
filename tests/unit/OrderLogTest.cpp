@@ -29,6 +29,8 @@ int main() {
   std::strcpy(order.ClientID, "142266");
   order.Transaction_Type = 'B';
   order.qtyType = 3;  // OPEN_ORDER
+  order.frontId = 11;
+  order.sessionId = 22;
   order.Price = 785.7;
   order.Qty = 1;
 
@@ -48,6 +50,8 @@ int main() {
       "\"order_id\":\"2000000\"",
       "\"order_ref\":\"000000000001\"",
       "\"exchange_order_id\":\"123456\"",
+      "\"front_id\":11",
+      "\"session_id\":22",
       "\"exchange_id\":\"SHFE\"",
       "\"instrument\":\"au2612\"",
       "\"account_id\":\"142266\"",
