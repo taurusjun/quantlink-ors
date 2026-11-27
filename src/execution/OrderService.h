@@ -1,6 +1,7 @@
 #pragma once
 
 #include <functional>
+#include <string>
 
 #include "domain/OrderInfo.h"
 #include "execution/OrderStore.h"
@@ -18,12 +19,15 @@ class OrderService {
 
   bool crossCheck(const ::ors::infra::RequestMsg& request);
   void reject(const ::ors::infra::RequestMsg& request, const char* reason);
+  void setNextOrderRef(int value);
+  std::string takeOrderRef();
 
   static constexpr std::uint32_t kCrossRejectCode = 1000101;
 
  private:
   OrderStore& orders_;
   PushResponse push_;
+  int nextOrderRef_{0};
 };
 
 }  // namespace ors

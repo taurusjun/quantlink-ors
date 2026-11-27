@@ -46,7 +46,7 @@ void ORSServer::OnRspUserLogin(CThostFtdcRspUserLoginField *pRspUserLogin,
     return;
   }
 
-  iNextOrderRef = std::atoi(pRspUserLogin->MaxOrderRef);
+  orderService_.setNextOrderRef(std::atoi(pRspUserLogin->MaxOrderRef));
   FRONT_ID = pRspUserLogin->FrontID;
   SESSION_ID = pRspUserLogin->SessionID;
 

@@ -104,7 +104,6 @@ ORSServer::ORSServer(::ors::OrsConfig config, ::ors::OrsTransport& transport,
                      : -1;
       }) {
     m_iRequestID = 0;
-    iNextOrderRef = 0;
     m_connected = false;
 
     m_rmsConfigFile = config_.rmsConfigFile;
@@ -485,9 +484,8 @@ void ORSServer::SendNewOrder(RequestMsg *request)
     strcpy(req.BrokerID, m_BROKER_ID.c_str());
     strcpy(req.InvestorID, m_INVESTOR_ID.c_str());
     strcpy(req.InstrumentID, request->Contract_Description.Symbol);
-    sprintf(ORDER_REF, "%012d", iNextOrderRef);
-    strcpy(req.OrderRef, ORDER_REF);
-    iNextOrderRef++;
+    const std::string orderRef = orderService_.takeOrderRef();
+    strcpy(req.OrderRef, orderRef.c_str());
 
     if (request->Transaction_Type == BUY)
     {
@@ -555,7 +553,7 @@ void ORSServer::SendNewOrder(RequestMsg *request)
     ordinfo.requestType = request->Request_Type;
     ordinfo.orderSent = 1;
     ordinfo.localID = request->OrderID;
-    strcpy(ordinfo.exchID, ORDER_REF);
+    strcpy(ordinfo.exchID, orderRef.c_str());
     strcpy(ordinfo.ClientID, request->AccountID);
     strcpy(ordinfo.ScripCode, request->Contract_Description.Symbol);
     ordinfo.Transaction_Type = request->Transaction_Type;

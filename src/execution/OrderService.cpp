@@ -1,5 +1,6 @@
 #include "execution/OrderService.h"
 
+#include <cstdio>
 #include <cstring>
 
 #include "infra/LogFacade.h"
@@ -28,6 +29,16 @@ bool OrderService::crossCheck(const ::ors::infra::RequestMsg& request) {
     }
   }
   return false;
+}
+
+void OrderService::setNextOrderRef(int value) {
+  nextOrderRef_ = value < 0 ? 0 : value;
+}
+
+std::string OrderService::takeOrderRef() {
+  char orderRef[16]{};
+  std::snprintf(orderRef, sizeof(orderRef), "%012d", nextOrderRef_++);
+  return orderRef;
 }
 
 void OrderService::reject(const ::ors::infra::RequestMsg& request,

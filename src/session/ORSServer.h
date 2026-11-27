@@ -104,7 +104,6 @@ public:
     std::string m_NEWPASSWORD;
     std::string m_AUTHCODE{""};
     std::string m_APPID{""};
-    int iNextOrderRef;
 
     void logOrderInfoResponse(const char *, ::ors::OrderInfo &ordinfo,
                               ::ors::infra::ResponseMsg *resp);
@@ -180,7 +179,6 @@ private:
     bool IsErrorRspInfo(CThostFtdcRspInfoField *pRspInfo);
     TThostFtdcFrontIDType FRONT_ID;
     TThostFtdcSessionIDType SESSION_ID;
-    TThostFtdcOrderRefType ORDER_REF;
 
     int m_logoffResp;
     int m_logonResp;
