@@ -220,12 +220,46 @@ void ORSServer::RegisterClient(const ::ors::ClientRegisterRequest& request)
     result.requestId = request.requestId;
     result.timestamp = ::ors::nowNanos();
 
+    if (request.accountId != config_.accountId) {
+        result.errorCode = 1;
+        result.errorMsg = "account mismatch";
+        log::warn("ors.client.register_rejected",
+                  {{"type", "session"},
+                   {"client_id", static_cast<int>(result.clientId)},
+                   {"instance_id", request.instanceId},
+                   {"account_id", request.accountId},
+                   {"environment", request.environment},
+                   {"error_code", static_cast<int>(result.errorCode)},
+                   {"error_message", result.errorMsg},
+                   {"message", "TB client registration rejected"}});
+        transport_.sendClientRegisterResponse(result);
+        return;
+    }
+
     const ::ors::ClientRegistration registration =
         clientRegistry_.registerClient(request.instanceId);
     result.clientId = registration.clientId;
     result.errorCode = registration.errorCode;
     result.errorMsg = registration.errorMessage;
-    clientRegistered_ = registration.ok;
+    if (registration.ok) {
+        log::info("ors.client.register",
+                  {{"type", "session"},
+                   {"client_id", static_cast<int>(result.clientId)},
+                   {"instance_id", request.instanceId},
+                   {"account_id", request.accountId},
+                   {"environment", request.environment},
+                   {"message", "TB client registered"}});
+    } else {
+        log::warn("ors.client.register_rejected",
+                  {{"type", "session"},
+                   {"client_id", static_cast<int>(result.clientId)},
+                   {"instance_id", request.instanceId},
+                   {"account_id", request.accountId},
+                   {"environment", request.environment},
+                   {"error_code", static_cast<int>(result.errorCode)},
+                   {"error_message", result.errorMsg},
+                   {"message", "TB client registration rejected"}});
+    }
     transport_.sendClientRegisterResponse(result);
 }
 
@@ -389,8 +423,8 @@ void ORSServer::ProcessRequest(RequestMsg *req)
 {
     RequestMsgSerializer rs(*req);
     (void)rs;
-    if (!clientRegistered_) {
-        RejectOrder(req, "ClientRegister required");
+    if (!clientRegistry_.ownsOrder(req->OrderID)) {
+        RejectOrder(req, "unknown client id");
         return;
     }
     if (!rmsReady_) {

@@ -53,6 +53,16 @@ void rejectsWhenRangeExhausted() {
   check(!exhausted.ok && exhausted.errorCode == 1, "range exhausted");
 }
 
+void validatesOrderOwnership() {
+  ::ors::ClientRegistry registry;
+  registry.registerClient("tb-a");
+  registry.registerClient("tb-b");
+  check(registry.ownsOrder(1'000'007), "client 1 owns its range");
+  check(registry.ownsOrder(2'000'001), "client 2 owns its range");
+  check(!registry.ownsOrder(3'000'001), "unregistered client rejected");
+  check(!registry.ownsOrder(0), "zero order id rejected");
+}
+
 void orderIdFormula() {
   check(::ors::ClientRegistry::makeOrderId(2, 3) == 2'000'003,
         "company order id formula");
@@ -70,6 +80,7 @@ int main() {
   neverReleasesIdWhileOrderLive();
   releasesIdOnlyWhenNoOrder();
   rejectsWhenRangeExhausted();
+  validatesOrderOwnership();
   orderIdFormula();
   return failures == 0 ? 0 : 1;
 }

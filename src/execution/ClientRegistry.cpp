@@ -38,4 +38,8 @@ bool ClientRegistry::hasClientId(std::uint32_t clientId) const {
   return allocated_.count(clientId) != 0;
 }
 
+bool ClientRegistry::ownsOrder(std::uint32_t orderId) const {
+  return orderId != 0 && hasClientId(clientIdFromOrderId(orderId));
+}
+
 }  // namespace ors

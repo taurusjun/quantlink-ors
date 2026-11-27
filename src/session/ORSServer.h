@@ -192,7 +192,6 @@ private:
     std::atomic_bool stopRequested_{false};
     std::mutex readyMutex_;
     std::condition_variable readyCv_;
-    bool clientRegistered_{false};
     bool rmsReady_{false};
     std::unique_ptr<::ors::StartupQuery> startupQuery_;
 

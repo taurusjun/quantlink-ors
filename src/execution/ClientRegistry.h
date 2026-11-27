@@ -27,6 +27,7 @@ class ClientRegistry {
                                    std::uint32_t orderCount);
   static std::uint32_t clientIdFromOrderId(std::uint32_t orderId);
   bool hasClientId(std::uint32_t clientId) const;
+  bool ownsOrder(std::uint32_t orderId) const;
 
  private:
   std::uint32_t nextClientId_{1};
