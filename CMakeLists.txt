@@ -87,6 +87,7 @@ add_library(ors_engine STATIC
     src/execution/ClientRegistry.cpp
     src/execution/OpenOrderGuard.cpp
     src/execution/OffsetPolicy.cpp
+    src/execution/OrderService.cpp
     src/query/AccountQueryState.cpp
     src/query/AccountQueryService.cpp
     src/query/StartupQuery.cpp

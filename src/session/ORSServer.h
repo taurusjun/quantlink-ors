@@ -26,6 +26,7 @@
 #include "domain/OrderInfo.h"
 #include "execution/OrderStore.h"
 #include "execution/RmsGate.h"
+#include "execution/OrderService.h"
 #include "domain/PositionTable.h"
 #include "execution/ClientRegistry.h"
 #include "query/AccountQueryService.h"
@@ -184,6 +185,7 @@ private:
     int m_logoffResp;
     int m_logonResp;
     ::ors::RmsGate rms_;
+    ::ors::OrderService orderService_;
 
     ::ors::PositionTable positionTable_;
     ::ors::ClientRegistry clientRegistry_;

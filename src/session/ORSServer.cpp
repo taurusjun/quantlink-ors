@@ -93,6 +93,9 @@ ORSServer::ORSServer(::ors::OrsConfig config, ::ors::OrsTransport& transport,
       transport_(transport),
       mdHandler_(mdHandler),
       marketUpdate_(marketUpdate),
+      orderService_(orders_, [this](::ors::infra::ResponseMsg* response) {
+          PushUpdate(response);
+      }),
       accountQueryService_(config_, transport_, [this](CThostFtdcQryTradingAccountField& query) {
           const int requestId = ++m_iRequestID;
           return m_pUserTradeApi != nullptr &&
@@ -804,36 +807,9 @@ void ORSServer::updatePosition(::ors::OrderInfo &ordinfo, ResponseMsg *resp)
     }
 }
 
-void ORSServer::RejectOrder(RequestMsg *req, const char *Reason)
+void ORSServer::RejectOrder(::ors::infra::RequestMsg *req, const char *reason)
 {
-    ResponseMsg response;
-    if (req->Request_Type == NEWORDER)
-    {
-        // response->Response_Type = ORDER_ERROR ;
-        response.Response_Type = ORS_REJECT;
-        response.ErrorCode = ERROR_CODE_CROSS_REJECT;
-        tempTimeStamp = ::ors::nowNanos();
-        ORS_LOG(INFO) << "--->>> " << tempTimeStamp << "|"
-                   << "New Order rejected | " << req->OrderID << " " << Reason << std::endl;
-    }
-    if (req->Request_Type == MODIFYORDER)
-    {
-        response.Response_Type = MODIFY_ORDER_REJECT;
-        tempTimeStamp = ::ors::nowNanos();
-        ORS_LOG(INFO) << "--->>> " << tempTimeStamp << "|"
-                   << "Modify Order rejected | " << req->OrderID << " " << Reason << std::endl;
-    }
-    if (req->Request_Type == CANCELORDER)
-    {
-        response.Response_Type = CANCEL_ORDER_REJECT;
-        tempTimeStamp = ::ors::nowNanos();
-        ORS_LOG(INFO) << "--->>> " << tempTimeStamp << "|"
-                   << "Cancel Order rejected | " << req->OrderID << " " << Reason << std::endl;
-    }
-    response.OrderID = req->OrderID;
-    strcpy(response.AccountID, req->AccountID);
-    PushUpdate(&response);
-    return;
+    orderService_.reject(*req, reason);
 }
 
 void ORSServer::OnRtnInstrumentStatus(CThostFtdcInstrumentStatusField *pInstrumentStatus)
@@ -1082,35 +1058,9 @@ void ORSServer::OnRspSettlementInfoConfirm(CThostFtdcSettlementInfoConfirmField 
     }
 }
 
-bool ORSServer::OrderCrossCheck(RequestMsg *request)
+bool ORSServer::OrderCrossCheck(::ors::infra::RequestMsg *request)
 {
-    OrderAccountMapIter openorders;
-    orders_.localMutex().lock();
-    for (openorders = orders_.local().begin(); openorders != orders_.local().end();
-         openorders++)
-    {
-        if (request->Transaction_Type != openorders->second.Transaction_Type)
-        {
-            // then these are opposite side orders
-            // if(request->Exchange_Type == openorders->second.Exchange_Type)
-            if (((openorders->second.Transaction_Type == BUY) && (request->Price <= openorders->second.Price)) || ((openorders->second.Transaction_Type == SELL) && (request->Price >= openorders->second.Price || request->Price == 0)))
-            {
-                // same exchange type
-                // why do above so as to avoid many string compares
-                if (!strcmp(request->Contract_Description.Symbol,
-                            openorders->second.ScripCode))
-                {
-                    tempTimeStamp = ::ors::nowNanos();
-                    ORS_LOG(INFO) << "|" << tempTimeStamp << "|"
-                               << "Cross : " << openorders->first << " | " << request->OrderID << std::endl;
-                    orders_.localMutex().unlock();
-                    return true;
-                }
-            }
-        }
-    }
-    orders_.localMutex().unlock();
-    return false;
+    return orderService_.crossCheck(*request);
 }
 
 /*
