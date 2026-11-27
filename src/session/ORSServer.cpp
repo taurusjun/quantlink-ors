@@ -1203,9 +1203,7 @@ void ORSServer::OnRtnOrder(CThostFtdcOrderField *pOrder)
             break;
         case THOST_FTDC_OST_Unknown:
             ordinfo.Qty = pOrder->VolumeTotalOriginal;
-            logOrderEvent("ors.order.submitted", "order submitted", ordinfo,
-                          "submitted", OrderLogLevel::Info, 0, ordinfo.Price,
-                          ordinfo.Qty, 0, ordinfo.Qty);
+            // OrderService already emits the submitted event.
             break;
         /*
          case THOST_FTDC_OST_NotTouched:

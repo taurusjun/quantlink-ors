@@ -7,6 +7,16 @@
 namespace ors {
 namespace {
 
+std::string trim(const char* value) {
+  if (value == nullptr) {
+    return "";
+  }
+  std::string text(value);
+  const auto first = text.find_first_not_of(" \t\r\n");
+  const auto last = text.find_last_not_of(" \t\r\n");
+  return first == std::string::npos ? "" : text.substr(first, last - first + 1);
+}
+
 std::string exchangeName(unsigned char exchange) {
   switch (exchange) {
     case 57:
@@ -67,11 +77,11 @@ void logOrderEvent(const char* event, const char* message,
   const auto fields = std::initializer_list<log::LogField>{
       {"type", "order"},
       {"order_id", std::to_string(order.localID)},
-      {"order_ref", order.exchID},
-      {"exchange_order_id", order.OrderSysID},
+      {"order_ref", trim(order.exchID)},
+      {"exchange_order_id", trim(order.OrderSysID)},
       {"exchange_id", exchangeName(static_cast<unsigned char>(order.exchange))},
-      {"instrument", order.ScripCode},
-      {"account_id", order.ClientID},
+      {"instrument", trim(order.ScripCode)},
+      {"account_id", trim(order.ClientID)},
       {"side", sideName(static_cast<unsigned char>(order.Transaction_Type))},
       {"offset", offsetName(order.qtyType)},
       {"status", status == nullptr ? "" : status},
