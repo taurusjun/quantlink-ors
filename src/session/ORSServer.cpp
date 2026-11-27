@@ -12,6 +12,7 @@
 #include "query/QueryMapping.h"
 #include "execution/OpenOrderGuard.h"
 #include "execution/OffsetPolicy.h"
+#include "execution/OrderLog.h"
 
 using namespace std;
 using namespace ors::infra;
@@ -255,10 +256,11 @@ void ORSServer::RmsError(ResponseType resptype, uint32_t orderid,
     resp->ErrorCode = errorNo;
     resp->TimeStamp = ::ors::nowNanos();
     transport_.sendResponse(*resp);
-    tempTimeStamp = ::ors::nowNanos();
-    ORS_LOG(INFO) << "|" << tempTimeStamp << "|"
-               << "RMS error | orderID: " << orderid << " | errorNo: " << errorNo << std::endl;
-    ORS_LOG(INFO) << "|" << tempTimeStamp << "|" << resp->toString() << endl;
+    log::error("ors.rms.error",
+               {{"type", "rms"},
+                {"order_id", std::to_string(orderid)},
+                {"error_code", std::to_string(errorNo)},
+                {"message", "RMS error"}});
     delete resp;
 }
 
@@ -271,9 +273,11 @@ void ORSServer::RmsWarning(ResponseType resptype, uint32_t orderid,
     resp->ErrorCode = errorNo;
     resp->TimeStamp = ::ors::nowNanos();
     transport_.sendResponse(*resp);
-    tempTimeStamp = ::ors::nowNanos();
-    ORS_LOG(INFO) << "|" << tempTimeStamp << "RMS Warning | orderID: " << orderid << " | errorNo: " << errorNo << std::endl;
-    ORS_LOG(INFO) << "|" << tempTimeStamp << "|" << resp->toString() << endl;
+    log::warn("ors.rms.warning",
+              {{"type", "rms"},
+               {"order_id", std::to_string(orderid)},
+               {"error_code", std::to_string(errorNo)},
+               {"message", "RMS warning"}});
     delete resp;
 }
 
@@ -419,8 +423,6 @@ void ORSServer::SendNewOrder(RequestMsg *request)
 
 void ORSServer::SendModifyOrder(RequestMsg *request)
 {
-    tempTimeStamp = ::ors::nowNanos();
-    ORS_LOG(INFO) << "--->>> " << tempTimeStamp << "|" << __FUNCTION__ << std::endl;
     RejectOrder(request, "Modify orders not allowed");
     return;
 }
@@ -430,11 +432,6 @@ void ORSServer::SendCancelOrder(RequestMsg *request)
     orderService_.sendCancelOrder(*this, *request);
 }
 
-void ORSServer::logOrderInfoResponse(const char *s, ::ors::OrderInfo &ordinfo,
-                                     ResponseMsg *resp)
-{
-    ORS_LOG(INFO) << "|" << tempTimeStamp << "|" << s << ordinfo.localID << " | " << ordinfo.exchID << " | " << ordinfo.OrderSysID << " | " << ordinfo.ScripCode << " | " << ordinfo.Price << " | " << ordinfo.Qty << " | " << (resp->TimeStamp - ordinfo.sendTime) << std::endl;
-}
 
 void ORSServer::PushUpdate(ResponseMsg *resp)
 {
@@ -460,22 +457,18 @@ void ORSServer::PushUpdate(ResponseMsg *resp)
             switch (ordinfo.exchange)
             {
             case CHINA_SHFE:
-                logOrderInfoResponse("NC | SHFE", ordinfo, resp);
                 ::ors::metrics().record(newConfirmSHFE,
                                          resp->TimeStamp - ordinfo.sendTime);
                 break;
             case CHINA_CFFEX:
-                logOrderInfoResponse("NC | CFFEX", ordinfo, resp);
                 ::ors::metrics().record(newConfirmCFFEX,
                                          resp->TimeStamp - ordinfo.sendTime);
                 break;
             case CHINA_ZCE:
-                logOrderInfoResponse("NC | ZCE", ordinfo, resp);
                 ::ors::metrics().record(newConfirmZCE,
                                          resp->TimeStamp - ordinfo.sendTime);
                 break;
             case CHINA_DCE:
-                logOrderInfoResponse("NC | DCE", ordinfo, resp);
                 ::ors::metrics().record(newConfirmDCE,
                                          resp->TimeStamp - ordinfo.sendTime);
                 break;
@@ -486,22 +479,18 @@ void ORSServer::PushUpdate(ResponseMsg *resp)
             switch (ordinfo.exchange)
             {
             case CHINA_SHFE:
-                logOrderInfoResponse("CC | SHFE", ordinfo, resp);
                 ::ors::metrics().record(cancelConfirmSHFE,
                                          resp->TimeStamp - ordinfo.sendTime);
                 break;
             case CHINA_CFFEX:
-                logOrderInfoResponse("CC | CFFEX", ordinfo, resp);
                 ::ors::metrics().record(cancelConfirmCFFEX,
                                          resp->TimeStamp - ordinfo.sendTime);
                 break;
             case CHINA_ZCE:
-                logOrderInfoResponse("CC | ZCE", ordinfo, resp);
                 ::ors::metrics().record(cancelConfirmZCE,
                                          resp->TimeStamp - ordinfo.sendTime);
                 break;
             case CHINA_DCE:
-                logOrderInfoResponse("CC | DCE", ordinfo, resp);
                 ::ors::metrics().record(cancelConfirmDCE,
                                          resp->TimeStamp - ordinfo.sendTime);
                 break;
@@ -961,13 +950,15 @@ void ORSServer::OnRspOrderAction(CThostFtdcOrderActionField *pOrderAction, CThos
     response.Price = pOrderAction->LimitPrice;
     response.Quantity = pOrderAction->VolumeChange;
     std::strncpy(response.AccountID, config_.accountId.c_str(), sizeof(response.AccountID) - 1);
+    logOrderEvent("ors.order.cancel_rejected", "order cancel rejected", order,
+                  "rejected", OrderLogLevel::Error, pRspInfo->ErrorID,
+                  pOrderAction->LimitPrice, pOrderAction->VolumeChange, 0,
+                  order.Qty, pRspInfo->ErrorMsg);
     PushUpdate(&response);
 }
 
 void ORSServer::OnRspOrderInsert(CThostFtdcInputOrderField *pInputOrder, CThostFtdcRspInfoField *pRspInfo, int nRequestID, bool bIsLast)
 {
-    tempTimeStamp = ::ors::nowNanos();
-    ORS_LOG(INFO) << "------> " << tempTimeStamp << "|" << __FUNCTION__ << " start OrderRef " << pInputOrder->OrderRef << " OrderSysID : " << pInputOrder->OrderRef << " ErrorID : " << pRspInfo->ErrorID << " ErrorMsg : " << pRspInfo->ErrorMsg << std::endl;
     bool bRemoveOrder = false;
     // Changed since error code 0 is also valid in this case
     // if(pRspInfo->ErrorID != 0)
@@ -990,23 +981,23 @@ void ORSServer::OnRspOrderInsert(CThostFtdcInputOrderField *pInputOrder, CThostF
         {
         case NEWORDER:
             response.Response_Type = ORDER_ERROR;
-            tempTimeStamp = ::ors::nowNanos();
-            ORS_LOG(INFO) << "--->>> " << tempTimeStamp << "|"
-                       << "New order error | " << ordinfo.ClientID << " | " << ordinfo.ScripCode << " | " << ordinfo.localID << " | " << ordinfo.exchID << " | " << ordinfo.Transaction_Type << " | " << ordinfo.Price << " | " << ordinfo.Qty << std::endl;
+            logOrderEvent("ors.order.rejected", "order rejected by exchange",
+                          ordinfo, "rejected", OrderLogLevel::Error, 0,
+                          ordinfo.Price, ordinfo.Qty, 0, ordinfo.Qty);
             bRemoveOrder = true;
             break;
         case CANCELORDER:
             response.Response_Type = CANCEL_ORDER_REJECT;
-            tempTimeStamp = ::ors::nowNanos();
-            ORS_LOG(INFO) << "--->>> " << tempTimeStamp << "|"
-                       << "Cancel reject | " << ordinfo.ClientID << " | " << ordinfo.ScripCode << " | " << ordinfo.localID << " | " << ordinfo.exchID << " | " << ordinfo.Transaction_Type << " | " << ordinfo.Price << " | " << ordinfo.Qty << std::endl;
+            logOrderEvent("ors.order.cancel_rejected", "order cancel rejected",
+                          ordinfo, "rejected", OrderLogLevel::Error, 0,
+                          ordinfo.Price, ordinfo.Qty, 0, ordinfo.Qty);
             bRemoveOrder = false;
             break;
         default:
             response.Response_Type = ORDER_ERROR;
-            tempTimeStamp = ::ors::nowNanos();
-            ORS_LOG(INFO) << "--->>> " << tempTimeStamp << "|"
-                       << "unknown Reject | " << ordinfo.ClientID << " | " << ordinfo.ScripCode << " | " << ordinfo.localID << " | " << ordinfo.exchID << " | " << ordinfo.Transaction_Type << " | " << ordinfo.Price << " | " << ordinfo.Qty << std::endl;
+            logOrderEvent("ors.order.unknown_status", "unknown order reject",
+                          ordinfo, "unknown", OrderLogLevel::Warn, 0,
+                          ordinfo.Price, ordinfo.Qty, 0, ordinfo.Qty);
             bRemoveOrder = true;
             break;
         }
@@ -1023,14 +1014,10 @@ void ORSServer::OnRspOrderInsert(CThostFtdcInputOrderField *pInputOrder, CThostF
             orders_.localMutex().unlock();
         }
     }
-    tempTimeStamp = ::ors::nowNanos();
-    ORS_LOG(INFO) << "------> " << tempTimeStamp << "|" << __FUNCTION__ << " end OrderRef" << pInputOrder->OrderRef << std::endl;
 }
 
 void ORSServer::OnErrRtnOrderAction(CThostFtdcOrderActionField *pOrderAction, CThostFtdcRspInfoField *pRspInfo)
 {
-    tempTimeStamp = ::ors::nowNanos();
-    ORS_LOG(INFO) << "------> " << tempTimeStamp << "|" << __FUNCTION__ << " start OrderRef " << pOrderAction->OrderRef << " OrderSysID : " << pOrderAction->OrderSysID << " ErrorID : " << pRspInfo->ErrorID << " ErrorMsg : " << pRspInfo->ErrorMsg << std::endl;
     bool bRemoveOrder = false;
     // Changed since error code 0 is also valid in this case
     // if(pRspInfo->ErrorID != 0)
@@ -1052,23 +1039,23 @@ void ORSServer::OnErrRtnOrderAction(CThostFtdcOrderActionField *pOrderAction, CT
         {
         case NEWORDER:
             response.Response_Type = ORDER_ERROR;
-            tempTimeStamp = ::ors::nowNanos();
-            ORS_LOG(INFO) << "--->>> " << tempTimeStamp << "|"
-                       << "New order error | " << ordinfo.ClientID << " | " << ordinfo.ScripCode << " | " << ordinfo.localID << " | " << ordinfo.exchID << " | " << ordinfo.Transaction_Type << " | " << ordinfo.Price << " | " << ordinfo.Qty << std::endl;
+            logOrderEvent("ors.order.rejected", "order rejected by exchange",
+                          ordinfo, "rejected", OrderLogLevel::Error, 0,
+                          ordinfo.Price, ordinfo.Qty, 0, ordinfo.Qty);
             bRemoveOrder = true;
             break;
         case CANCELORDER:
             response.Response_Type = CANCEL_ORDER_REJECT;
-            tempTimeStamp = ::ors::nowNanos();
-            ORS_LOG(INFO) << "--->>> " << tempTimeStamp << "|"
-                       << "Cancel reject | " << ordinfo.ClientID << " | " << ordinfo.ScripCode << " | " << ordinfo.localID << " | " << ordinfo.exchID << " | " << ordinfo.Transaction_Type << " | " << ordinfo.Price << " | " << ordinfo.Qty << std::endl;
+            logOrderEvent("ors.order.cancel_rejected", "order cancel rejected",
+                          ordinfo, "rejected", OrderLogLevel::Error, 0,
+                          ordinfo.Price, ordinfo.Qty, 0, ordinfo.Qty);
             bRemoveOrder = false;
             break;
         default:
             response.Response_Type = ORDER_ERROR;
-            tempTimeStamp = ::ors::nowNanos();
-            ORS_LOG(INFO) << "--->>> " << tempTimeStamp << "|"
-                       << "unknown Reject | " << ordinfo.ClientID << " | " << ordinfo.ScripCode << " | " << ordinfo.localID << " | " << ordinfo.exchID << " | " << ordinfo.Transaction_Type << " | " << ordinfo.Price << " | " << ordinfo.Qty << std::endl;
+            logOrderEvent("ors.order.unknown_status", "unknown order reject",
+                          ordinfo, "unknown", OrderLogLevel::Warn, 0,
+                          ordinfo.Price, ordinfo.Qty, 0, ordinfo.Qty);
             bRemoveOrder = true;
             break;
         }
@@ -1085,16 +1072,11 @@ void ORSServer::OnErrRtnOrderAction(CThostFtdcOrderActionField *pOrderAction, CT
             orders_.localMutex().unlock();
         }
     }
-    tempTimeStamp = ::ors::nowNanos();
-    ORS_LOG(INFO) << "------> " << tempTimeStamp << "|" << __FUNCTION__ << " end OrderRef" << pOrderAction->OrderRef << std::endl;
 }
 
 void ORSServer::OnErrRtnOrderInsert(CThostFtdcInputOrderField *pInputOrder, CThostFtdcRspInfoField *pRspInfo)
 {
-    tempTimeStamp = ::ors::nowNanos();
-    ORS_LOG(INFO) << "------> " << tempTimeStamp << "|" << __FUNCTION__ << " start OrderRef" << pInputOrder->OrderRef << std::endl;
     bool bRemoveOrder = false;
-    ORS_LOG(INFO) << "--->>> " << tempTimeStamp << "|" << __FUNCTION__ << " OrderSysID : " << pInputOrder->OrderRef << " ErrorID : " << pRspInfo->ErrorID << " ErrorMsg : " << pRspInfo->ErrorMsg << std::endl;
     // Changed since error code 0 is also valid in this case
     // if(pRspInfo->ErrorID != 0)
     {
@@ -1118,19 +1100,24 @@ void ORSServer::OnErrRtnOrderInsert(CThostFtdcInputOrderField *pInputOrder, CTho
         {
         case NEWORDER:
             response.Response_Type = ORDER_ERROR;
-            ORS_LOG(INFO) << "--->>> " << tempTimeStamp << "|"
-                       << "New order error | " << ordinfo.ClientID << " | " << ordinfo.ScripCode << " | " << ordinfo.localID << " | " << ordinfo.exchID << " | " << ordinfo.Transaction_Type << " | " << ordinfo.Price << " | " << ordinfo.Qty << std::endl;
+            logOrderEvent("ors.order.rejected", "order rejected by exchange",
+                          ordinfo, "rejected", OrderLogLevel::Error,
+                          pRspInfo->ErrorID, ordinfo.Price, ordinfo.Qty, 0,
+                          ordinfo.Qty, pRspInfo->ErrorMsg);
             bRemoveOrder = true;
             break;
         case CANCELORDER:
             response.Response_Type = CANCEL_ORDER_REJECT;
-            ORS_LOG(INFO) << "--->>> " << tempTimeStamp << "|"
-                       << "Cancel reject | " << ordinfo.ClientID << " | " << ordinfo.ScripCode << " | " << ordinfo.localID << " | " << ordinfo.exchID << " | " << ordinfo.Transaction_Type << " | " << ordinfo.Price << " | " << ordinfo.Qty << std::endl;
+            logOrderEvent("ors.order.cancel_rejected", "order cancel rejected",
+                          ordinfo, "rejected", OrderLogLevel::Error,
+                          pRspInfo->ErrorID, ordinfo.Price, ordinfo.Qty, 0,
+                          ordinfo.Qty, pRspInfo->ErrorMsg);
             break;
         default:
             response.Response_Type = ORDER_ERROR;
-            ORS_LOG(INFO) << "--->>> " << tempTimeStamp << "|"
-                       << "unknown Reject | " << ordinfo.ClientID << " | " << ordinfo.ScripCode << " | " << ordinfo.localID << " | " << ordinfo.exchID << " | " << ordinfo.Transaction_Type << " | " << ordinfo.Price << " | " << ordinfo.Qty << std::endl;
+            logOrderEvent("ors.order.unknown_status", "unknown order reject",
+                          ordinfo, "unknown", OrderLogLevel::Warn, 0,
+                          ordinfo.Price, ordinfo.Qty, 0, ordinfo.Qty);
             bRemoveOrder = true;
             break;
         }
@@ -1147,30 +1134,19 @@ void ORSServer::OnErrRtnOrderInsert(CThostFtdcInputOrderField *pInputOrder, CTho
             orders_.localMutex().unlock();
         }
     }
-    tempTimeStamp = ::ors::nowNanos();
-    ORS_LOG(INFO) << "------> " << tempTimeStamp << "|" << __FUNCTION__ << " end OrderRef" << pInputOrder->OrderRef << std::endl;
 }
 
 void ORSServer::OnRtnOrder(CThostFtdcOrderField *pOrder, CThostFtdcRspInfoField *pRspInfo)
 {
-    tempTimeStamp = ::ors::nowNanos();
-    ORS_LOG(INFO) << "------> " << tempTimeStamp << "|" << __FUNCTION__ << " start OrderRef" << pOrder->OrderRef << __FUNCTION__ << "OrderSysID : " << pOrder->OrderSysID << " ErrorID : " << pRspInfo->ErrorID << " ErrorMsg : " << pRspInfo->ErrorMsg << std::endl;
     if (pRspInfo->ErrorID != 0 || pOrder->OrderSysID == NULL)
     {
-        tempTimeStamp = ::ors::nowNanos();
-        ORS_LOG(INFO) << "--->>> " << tempTimeStamp << "|"
-                   << "Order error, errorcode=" << pRspInfo->ErrorID << " errormsg= " << pRspInfo->ErrorMsg << std::endl;
         pOrder->OrderSubmitStatus = THOST_FTDC_OSS_InsertRejected - '0';
     }
     OnRtnOrder(pOrder);
-    tempTimeStamp = ::ors::nowNanos();
-    ORS_LOG(INFO) << "------> " << tempTimeStamp << "|" << __FUNCTION__ << " end OrderRef" << pOrder->OrderRef << std::endl;
 }
 
 void ORSServer::OnRtnOrder(CThostFtdcOrderField *pOrder)
 {
-    tempTimeStamp = ::ors::nowNanos();
-    ORS_LOG(INFO) << "------> " << tempTimeStamp << "|" << __FUNCTION__ << " start OrderRef" << pOrder->OrderRef << std::endl;
     ::ors::OrderInfo ordinfo;
     ResponseMsg response;
     bool bRemoveOrder = false;
@@ -1197,11 +1173,7 @@ void ORSServer::OnRtnOrder(CThostFtdcOrderField *pOrder)
         switch (pOrder->OrderStatus)
         {
         case THOST_FTDC_OST_AllTraded:
-            tempTimeStamp = ::ors::nowNanos();
-            ORS_LOG(INFO) << "--->>> " << tempTimeStamp << "|"
-                       << "All traded | " << ordinfo.ClientID << " | " << ordinfo.ScripCode << " | " << ordinfo.localID << " | " << ordinfo.exchID << " | " << ordinfo.Transaction_Type << std::endl;
-            // as trade might come late
-            // bRemoveOrder = true;
+            // Trade confirmation logs the fill with full order fields.
             break;
         /*
          case THOST_FTDC_OST_PartTradedQueueing:
@@ -1218,25 +1190,22 @@ void ORSServer::OnRtnOrder(CThostFtdcOrderField *pOrder)
             response.Quantity = pOrder->VolumeTotal;
             PushUpdate(&response);
             ordinfo.Qty = ordinfo.Qty - pOrder->VolumeTotal;
-            tempTimeStamp = ::ors::nowNanos();
-            ORS_LOG(INFO) << "--->>> " << tempTimeStamp << "|"
-                       << "Cancel confirm | " << ordinfo.ClientID << " | " << ordinfo.ScripCode << " | " << ordinfo.localID << " | " << ordinfo.exchID << " | " << ordinfo.Transaction_Type << " | " << ordinfo.Price << " | " << ordinfo.Qty << " | " << response.Quantity << std::endl;
+            logOrderEvent("ors.order.canceled", "order canceled", ordinfo,
+                          "canceled", OrderLogLevel::Info, 0, ordinfo.Price,
+                          ordinfo.Qty, 0, ordinfo.Qty);
             if (ordinfo.Qty == 0)
             {
                 bRemoveOrder = true;
             }
             else
             {
-                tempTimeStamp = ::ors::nowNanos();
-                ORS_LOG(INFO) << "--->>> " << tempTimeStamp << "|"
-                           << "Partial cancel condition triggered2" << std::endl;
             }
             break;
         case THOST_FTDC_OST_Unknown:
             ordinfo.Qty = pOrder->VolumeTotalOriginal;
-            tempTimeStamp = ::ors::nowNanos();
-            ORS_LOG(INFO) << "--->>> " << tempTimeStamp << "|"
-                       << "Request submitted | " << ordinfo.ClientID << " | " << ordinfo.ScripCode << " | " << ordinfo.localID << " | " << ordinfo.exchID << " | " << ordinfo.Transaction_Type << " | " << ordinfo.Price << " | " << ordinfo.Qty << std::endl;
+            logOrderEvent("ors.order.submitted", "order submitted", ordinfo,
+                          "submitted", OrderLogLevel::Info, 0, ordinfo.Price,
+                          ordinfo.Qty, 0, ordinfo.Qty);
             break;
         /*
          case THOST_FTDC_OST_NotTouched:
@@ -1245,11 +1214,9 @@ void ORSServer::OnRtnOrder(CThostFtdcOrderField *pOrder)
          break;
          */
         default:
-            tempTimeStamp = ::ors::nowNanos();
-            ORS_LOG(INFO) << "--->>> " << tempTimeStamp << "|"
-                       << "LocalID | " << ordinfo.localID << " OrderSysID " << pOrder->OrderSysID << " OrderSubmitStatus " << pOrder->OrderSubmitStatus << " OrderStatus " << pOrder->OrderStatus << std::endl;
-            ORS_LOG(INFO) << "--->>> " << tempTimeStamp << "|"
-                       << "unhandled order status | " << ordinfo.ClientID << " | " << ordinfo.ScripCode << " | " << ordinfo.localID << " | " << ordinfo.exchID << " | " << ordinfo.Transaction_Type << " | " << ordinfo.Price << " | " << ordinfo.Qty << std::endl;
+            logOrderEvent("ors.order.unknown_status", "unhandled order status",
+                          ordinfo, "unknown", OrderLogLevel::Warn, 0,
+                          ordinfo.Price, ordinfo.Qty, 0, ordinfo.Qty);
             break;
         }
         break;
@@ -1257,10 +1224,7 @@ void ORSServer::OnRtnOrder(CThostFtdcOrderField *pOrder)
         switch (pOrder->OrderStatus)
         {
         case THOST_FTDC_OST_AllTraded:
-            tempTimeStamp = ::ors::nowNanos();
-            ORS_LOG(INFO) << "--->>> " << tempTimeStamp << "|"
-                       << "All traded | " << ordinfo.ClientID << " | " << ordinfo.ScripCode << " | " << ordinfo.localID << " | " << ordinfo.exchID << " | " << ordinfo.Transaction_Type << " | " << ordinfo.Price << " | " << ordinfo.Qty << std::endl;
-            // bRemoveOrder = true;
+            // Trade confirmation logs the fill.
             break;
         case THOST_FTDC_OST_PartTradedQueueing:
         case THOST_FTDC_OST_NoTradeQueueing:
@@ -1269,9 +1233,9 @@ void ORSServer::OnRtnOrder(CThostFtdcOrderField *pOrder)
                 // ordinfo.Qty = pOrder->VolumeTotalOriginal;
                 response.Response_Type = NEW_ORDER_CONFIRM;
                 PushUpdate(&response);
-                tempTimeStamp = ::ors::nowNanos();
-                ORS_LOG(INFO) << "--->>> " << tempTimeStamp << "|"
-                           << "New confirm | " << ordinfo.ClientID << " | " << ordinfo.ScripCode << " | " << ordinfo.localID << " | " << ordinfo.exchID << " | " << ordinfo.Transaction_Type << " | " << ordinfo.Price << " | " << ordinfo.Qty << std::endl;
+                logOrderEvent("ors.order.accepted", "order accepted by exchange",
+                              ordinfo, "accepted", OrderLogLevel::Info, 0,
+                              ordinfo.Price, ordinfo.Qty, 0, ordinfo.Qty);
                 ordinfo.orderSent = 0;
             }
             break;
@@ -1286,18 +1250,15 @@ void ORSServer::OnRtnOrder(CThostFtdcOrderField *pOrder)
             response.Quantity = pOrder->VolumeTotal;
             PushUpdate(&response);
             ordinfo.Qty = ordinfo.Qty - pOrder->VolumeTotal;
-            tempTimeStamp = ::ors::nowNanos();
-            ORS_LOG(INFO) << "--->>> " << tempTimeStamp << "|"
-                       << "Cancel confirm | " << ordinfo.ClientID << " | " << ordinfo.ScripCode << " | " << ordinfo.localID << " | " << ordinfo.exchID << " | " << ordinfo.Transaction_Type << " | " << ordinfo.Price << " | " << ordinfo.Qty << std::endl;
+            logOrderEvent("ors.order.canceled", "order canceled", ordinfo,
+                          "canceled", OrderLogLevel::Info, 0, ordinfo.Price,
+                          ordinfo.Qty, 0, ordinfo.Qty);
             if (ordinfo.Qty == 0)
             {
                 bRemoveOrder = true;
             }
             else
             {
-                tempTimeStamp = ::ors::nowNanos();
-                ORS_LOG(INFO) << "--->>> " << tempTimeStamp << "|"
-                           << "Partial cancel condition triggered" << std::endl;
             }
             break;
         /*
@@ -1309,11 +1270,9 @@ void ORSServer::OnRtnOrder(CThostFtdcOrderField *pOrder)
          break;
          */
         default:
-            tempTimeStamp = ::ors::nowNanos();
-            ORS_LOG(INFO) << "--->>> " << tempTimeStamp << "|"
-                       << "LocalID | " << ordinfo.localID << " OrderSysID " << pOrder->OrderSysID << " OrderSubmitStatus " << pOrder->OrderSubmitStatus << " OrderStatus " << pOrder->OrderStatus << std::endl;
-            ORS_LOG(INFO) << "--->>> " << tempTimeStamp << "|"
-                       << "unhandled order status " << ordinfo.ClientID << " | " << ordinfo.ScripCode << " | " << ordinfo.localID << " | " << ordinfo.exchID << " | " << ordinfo.Transaction_Type << " | " << ordinfo.Price << " | " << ordinfo.Qty << std::endl;
+            logOrderEvent("ors.order.unknown_status", "unhandled order status",
+                          ordinfo, "unknown", OrderLogLevel::Warn, 0,
+                          ordinfo.Price, ordinfo.Qty, 0, ordinfo.Qty);
             break;
         }
         break;
@@ -1323,27 +1282,25 @@ void ORSServer::OnRtnOrder(CThostFtdcOrderField *pOrder)
         case NEWORDER:
             response.Response_Type = ORDER_ERROR;
             PushUpdate(&response);
-            tempTimeStamp = ::ors::nowNanos();
-            ORS_LOG(INFO) << "--->>> " << tempTimeStamp << "|"
-                       << "New order error | " << ordinfo.ClientID << " | " << ordinfo.ScripCode << " | " << ordinfo.localID << " | " << ordinfo.exchID << " | " << ordinfo.Transaction_Type << " | " << ordinfo.Price << " | " << ordinfo.Qty << std::endl;
+            logOrderEvent("ors.order.rejected", "order rejected by exchange",
+                          ordinfo, "rejected", OrderLogLevel::Error, 0,
+                          ordinfo.Price, ordinfo.Qty, 0, ordinfo.Qty);
             bRemoveOrder = true;
             break;
         case CANCELORDER:
             response.Response_Type = CANCEL_ORDER_REJECT;
             PushUpdate(&response);
-            tempTimeStamp = ::ors::nowNanos();
-            ORS_LOG(INFO) << "--->>> " << tempTimeStamp << "|"
-                       << "Cancel reject | " << ordinfo.ClientID << " | " << ordinfo.ScripCode << " | " << ordinfo.localID << " | " << ordinfo.exchID << " | " << ordinfo.Transaction_Type << " | " << ordinfo.Price << " | " << ordinfo.Qty << std::endl;
+            logOrderEvent("ors.order.cancel_rejected", "order cancel rejected",
+                          ordinfo, "rejected", OrderLogLevel::Error, 0,
+                          ordinfo.Price, ordinfo.Qty, 0, ordinfo.Qty);
             break;
         default:
             // ordinfo.Qty = pOrder->VolumeTotalOriginal;
             response.Response_Type = ORDER_ERROR;
             PushUpdate(&response);
-            tempTimeStamp = ::ors::nowNanos();
-            ORS_LOG(INFO) << "--->>> " << tempTimeStamp << "|"
-                       << "LocalID | " << ordinfo.localID << " OrderSysID " << pOrder->OrderSysID << " OrderSubmitStatus " << pOrder->OrderSubmitStatus << " OrderStatus " << pOrder->OrderStatus << std::endl;
-            ORS_LOG(INFO) << "--->>> " << tempTimeStamp << "|"
-                       << "unknown Reject " << ordinfo.ClientID << " | " << ordinfo.ScripCode << " | " << ordinfo.localID << " | " << ordinfo.exchID << " | " << ordinfo.Transaction_Type << " | " << ordinfo.Price << " | " << ordinfo.Qty << std::endl;
+            logOrderEvent("ors.order.unknown_status", "unknown order reject",
+                          ordinfo, "unknown", OrderLogLevel::Warn, 0,
+                          ordinfo.Price, ordinfo.Qty, 0, ordinfo.Qty);
             bRemoveOrder = true;
             break;
         }
@@ -1357,11 +1314,9 @@ void ORSServer::OnRtnOrder(CThostFtdcOrderField *pOrder)
          * THOST_FTDC_OSS_ModifyRejected
          */
         // ordinfo.Qty = pOrder->VolumeTotalOriginal;
-        tempTimeStamp = ::ors::nowNanos();
-        ORS_LOG(INFO) << "--->>> " << tempTimeStamp << "|"
-                   << "LocalID " << ordinfo.localID << " OrderSysID " << pOrder->OrderSysID << " OrderSubmitStatus " << pOrder->OrderSubmitStatus << " OrderStatus " << pOrder->OrderStatus << std::endl;
-        ORS_LOG(INFO) << "--->>> " << tempTimeStamp << "|"
-                   << "unhandled status " << ordinfo.ClientID << " | " << ordinfo.ScripCode << " | " << ordinfo.localID << " | " << ordinfo.exchID << " | " << ordinfo.Transaction_Type << " | " << ordinfo.Price << " | " << ordinfo.Qty << std::endl;
+        logOrderEvent("ors.order.unknown_status", "unhandled order status",
+                      ordinfo, "unknown", OrderLogLevel::Warn, 0,
+                      ordinfo.Price, ordinfo.Qty, 0, ordinfo.Qty);
         break;
     }
 
@@ -1379,8 +1334,6 @@ void ORSServer::OnRtnOrder(CThostFtdcOrderField *pOrder)
         orders_.localMutex().unlock();
     }
     // UpdateRMS(res, ordinfo.ScripCode, ordinfo.ClientID, ordinfo.Transaction_Type);
-    tempTimeStamp = ::ors::nowNanos();
-    ORS_LOG(INFO) << "------> " << tempTimeStamp << "|" << __FUNCTION__ << " end OrderRef" << pOrder->OrderRef << std::endl;
 }
 
 
@@ -1441,27 +1394,21 @@ void ORSServer::OnRtnTrade(CThostFtdcTradeField *pTrade)
 
     ordinfo.orderSent = 0;
 
-    tempTimeStamp = ::ors::nowNanos();
-    ORS_LOG(INFO) << "--->>> " << tempTimeStamp << "|"
-               << "Trade | " << ordinfo.ClientID << " | " << ordinfo.ScripCode << " | " << ordinfo.localID << " | " << ordinfo.exchID << " | " << ordinfo.Transaction_Type << " | " << pTrade->Price << " | " << pTrade->Volume << " | " << ordinfo.openQty << std::endl;
+    const bool filled = ordinfo.openQty == 0;
+    logOrderEvent("ors.order.trade", filled ? "order filled" : "order partially filled",
+                  ordinfo, filled ? "filled" : "partially_filled",
+                  OrderLogLevel::Info, 0, pTrade->Price,
+                  static_cast<std::uint64_t>(pTrade->Volume),
+                  static_cast<std::uint64_t>(pTrade->Volume),
+                  static_cast<std::uint64_t>(ordinfo.openQty));
 
     // UpdateRMS(res, ordinfo.ScripCode, ordinfo.ClientID, ordinfo.Transaction_Type);
-
-    // Now this should be done by order response only
-    if (ordinfo.openQty > 0)
-    {
-        tempTimeStamp = ::ors::nowNanos();
-        ORS_LOG(INFO) << "--->>> " << tempTimeStamp << "|"
-                   << "Partially traded" << std::endl;
+    if (!filled) {
         // orders_.local()[response.OrderID] = ordinfo;
         // orders_.exchange()[std::string(ordinfo.exchID)] = ordinfo;
-    }
-    else
-    {
+    } else {
         RemoveFromMap(ordinfo.exchID, response.OrderID);
     }
-    tempTimeStamp = ::ors::nowNanos();
-    ORS_LOG(INFO) << "------> " << tempTimeStamp << "|" << __FUNCTION__ << " end OrderRef " << pTrade->OrderRef << std::endl;
 }
 
 void ORSServer::installSignals()

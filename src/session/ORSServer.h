@@ -108,9 +108,6 @@ public:
     std::string m_AUTHCODE{""};
     std::string m_APPID{""};
 
-    void logOrderInfoResponse(const char *, ::ors::OrderInfo &ordinfo,
-                              ::ors::infra::ResponseMsg *resp);
-
     struct TraderApiDeleter {
         void operator()(CThostFtdcTraderApi* api) const noexcept {
             if (api != nullptr) api->Release();
