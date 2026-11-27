@@ -1,3 +1,4 @@
+#include <cstdio>
 #include <iostream>
 #include <set>
 #include <string>
@@ -51,6 +52,26 @@ void rejectsWhenRangeExhausted() {
         "last client id");
   const auto exhausted = registry.registerClient("x");
   check(!exhausted.ok && exhausted.errorCode == 1, "range exhausted");
+}
+
+void persistsClientIdHighWater() {
+  const char* path = "/tmp/ors_client_registry_highwater_test";
+  std::remove(path);
+  {
+    ::ors::ClientRegistry registry;
+    check(registry.configureHighWater(path), "configure highwater");
+    const auto first = registry.registerClient("a");
+    const auto second = registry.registerClient("b");
+    check(first.ok && first.clientId == 1, "first persisted id");
+    check(second.ok && second.clientId == 2, "second persisted id");
+  }
+  {
+    ::ors::ClientRegistry registry;
+    check(registry.configureHighWater(path), "reload highwater");
+    const auto next = registry.registerClient("c");
+    check(next.ok && next.clientId == 3, "restart continues client id");
+  }
+  std::remove(path);
 }
 
 void validatesOrderOwnership() {

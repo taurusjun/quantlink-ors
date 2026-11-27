@@ -84,6 +84,10 @@ int main(int argc, char** argv) {
     if (pollThread.joinable()) {
       pollThread.join();
     }
+    if (server.startupBlocked()) {
+      // EX_CONFIG: startup is unsafe; do not auto-restart.
+      return 78;
+    }
     return 0;
   } catch (const std::exception& error) {
     std::cerr << "ORS failed: " << error.what() << '\n';

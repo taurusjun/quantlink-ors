@@ -19,6 +19,7 @@ class ClientRegistry {
   static constexpr std::uint32_t kOrderIdRange = 1'000'000;
   static constexpr std::uint32_t kMaxClientId = 4294;
 
+  bool configureHighWater(std::string path);
   ClientRegistration registerClient(std::string_view instanceId);
   void releaseIfFlat(std::uint32_t clientId,
                      const std::set<std::uint32_t>& orderIds);
@@ -30,7 +31,10 @@ class ClientRegistry {
   bool ownsOrder(std::uint32_t orderId) const;
 
  private:
+  bool persistHighWater() const;
+
   std::uint32_t nextClientId_{1};
+  std::string highWaterPath_;
   std::set<std::uint32_t> allocated_;
 };
 

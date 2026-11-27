@@ -137,6 +137,16 @@ ORSServer::ORSServer(::ors::OrsConfig config, ::ors::OrsTransport& transport,
     m_rmsConfigFile = config_.rmsConfigFile;
     m_rmsFirmwideConfigFile = config_.rmsFirmwideConfigFile;
 
+    if (!clientRegistry_.configureHighWater(config_.clientIdHighWaterFile)) {
+      startupBlocked_.store(true);
+      log::error("ors.startup.client_id_highwater_failed",
+                 {{"type", "system"},
+                  {"account_id", config_.accountId},
+                  {"severity", "P1"},
+                  {"path", config_.clientIdHighWaterFile},
+                  {"message", "client id highwater is invalid"}});
+    }
+
     startupQuery_ = std::make_unique<::ors::StartupQuery>(
         positionTable_, config_,
         [this](CThostFtdcQryInvestorPositionField& request) {
@@ -155,6 +165,17 @@ ORSServer::ORSServer(::ors::OrsConfig config, ::ors::OrsTransport& transport,
         [this] {
           m_connected.store(true);
           readyCv_.notify_all();
+        },
+        [this](std::string_view reason) {
+          startupBlocked_.store(true);
+          m_connected.store(false);
+          readyCv_.notify_all();
+          log::error("ors.startup.blocked",
+                     {{"type", "system"},
+                      {"account_id", config_.accountId},
+                      {"severity", "P1"},
+                      {"reason", std::string(reason)},
+                      {"message", "ORS startup blocked; manual intervention required"}});
         });
 
     registerStats();
@@ -175,10 +196,12 @@ void ORSServer::Start()
     {
         std::unique_lock<std::mutex> lock(readyMutex_);
         readyCv_.wait(lock, [this] {
-            return m_connected.load() || stopRequested_.load();
+            return m_connected.load() || stopRequested_.load() ||
+                   startupBlocked_.load();
         });
     }
-    if (stopRequested_.load() || !m_connected.load()) {
+    if (stopRequested_.load() || startupBlocked_.load() ||
+        !m_connected.load()) {
         return;
     }
 
@@ -423,6 +446,10 @@ void ORSServer::ProcessRequest(RequestMsg *req)
 {
     RequestMsgSerializer rs(*req);
     (void)rs;
+    if (startupBlocked_.load()) {
+        RejectOrder(req, "startup blocked: manual intervention required");
+        return;
+    }
     if (!clientRegistry_.ownsOrder(req->OrderID)) {
         RejectOrder(req, "unknown client id");
         return;

@@ -111,5 +111,19 @@ int main() {
     std::cerr << "order before RMS ready was not rejected\n";
     return 1;
   }
+
+  ::ors::InMemoryOrsTransport blockedTransport;
+  MDHandler blockedMd(blockedTransport);
+  ::ors::md::MarketUpdateNew blockedMarket{};
+  ORSServer blocked(config, blockedTransport, blockedMd, blockedMarket);
+  CThostFtdcOrderField live{};
+  std::strcpy(live.OrderRef, "000000000002");
+  live.OrderStatus = THOST_FTDC_OST_NoTradeQueueing;
+  blocked.OnRspQryOrder(&live, nullptr, 0, true);
+  if (!blocked.startupBlocked()) {
+    std::cerr << "live order did not block startup\n";
+    return 1;
+  }
+  blocked.Start();
   return 0;
 }

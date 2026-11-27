@@ -1,6 +1,7 @@
 #include "config/OrsConfig.h"
 
 #include <cstdlib>
+#include <filesystem>
 #include <stdexcept>
 
 #include "ors/base/ConfigFile.h"
@@ -36,6 +37,12 @@ OrsConfig OrsConfig::load(const std::string& path) {
   config.mdFlowDir = read(file, "MD_FLOW_DIR", config.flowDir.c_str());
   config.accountId = file.require("ACCOUNT_ID");
   config.instrument = read(file, "INSTRUMENT");
+  const std::string defaultHighWater =
+      (std::filesystem::path(config.flowDir).parent_path() /
+       "client-id.highwater")
+          .string();
+  config.clientIdHighWaterFile =
+      read(file, "CLIENT_ID_HIGHWATER", defaultHighWater.c_str());
 
   config.authCode = read(file, "AUTH_CODE");
   config.appId = read(file, "APP_ID");

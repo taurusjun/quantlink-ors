@@ -75,6 +75,7 @@ public:
     void Login();
     void Start();
     void Stop();
+    bool startupBlocked() const { return startupBlocked_.load(); }
     void RegisterClient(const ::ors::ClientRegisterRequest&);
     void QueryAccount(const ::ors::AccountQueryRequest&);
     void RejectOrder(::ors::infra::RequestMsg *, const char *);
@@ -190,6 +191,7 @@ private:
     ::ors::AccountQueryService accountQueryService_;
     std::thread accountQueryTimer_;
     std::atomic_bool stopRequested_{false};
+    std::atomic_bool startupBlocked_{false};
     std::mutex readyMutex_;
     std::condition_variable readyCv_;
     bool rmsReady_{false};

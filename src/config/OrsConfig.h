@@ -20,6 +20,7 @@ struct OrsConfig {
   std::string aeronChannel{"aeron:ipc"};
   std::string accountId;
   std::string instrument;
+  std::string clientIdHighWaterFile;
   std::string venueId;
   std::string orsId;
   int requestStream{1};
