@@ -15,6 +15,9 @@ int main() {
   ::ors::md::MarketUpdateNew marketUpdate{};
   ORSServer server(config, transport, mdHandler, marketUpdate);
 
+  // StartupQuery must be constructed before CTP delivers the position callback.
+  server.OnRspQryInvestorPosition(nullptr, nullptr, 0, true);
+
   ::ors::ClientRegisterRequest registration;
   registration.requestId = 1;
   registration.instanceId = "test";

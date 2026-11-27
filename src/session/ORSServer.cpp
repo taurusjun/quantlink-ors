@@ -109,6 +109,26 @@ ORSServer::ORSServer(::ors::OrsConfig config, ::ors::OrsTransport& transport,
     m_rmsConfigFile = config_.rmsConfigFile;
     m_rmsFirmwideConfigFile = config_.rmsFirmwideConfigFile;
 
+    startupQuery_ = std::make_unique<::ors::StartupQuery>(
+        positionTable_, config_,
+        [this](CThostFtdcQryInvestorPositionField& request) {
+          if (m_pUserTradeApi == nullptr) {
+            return -1;
+          }
+          return m_pUserTradeApi->ReqQryInvestorPosition(&request,
+                                                          ++m_iRequestID);
+        },
+        [this](CThostFtdcQryOrderField& request) {
+          if (m_pUserTradeApi == nullptr) {
+            return -1;
+          }
+          return m_pUserTradeApi->ReqQryOrder(&request, ++m_iRequestID);
+        },
+        [this] {
+          m_connected.store(true);
+          readyCv_.notify_all();
+        });
+
     registerStats();
 
     lastRecordTime = ::ors::nowNanos();
@@ -232,6 +252,9 @@ void ORSServer::RmsWarning(ResponseType resptype, uint32_t orderid,
 
 void ORSServer::DoLoggOff()
 {
+    if (m_pUserTradeApi == nullptr) {
+        return;
+    }
     int iResult;
     CThostFtdcUserLogoutField pUserLogout;
     strcpy(pUserLogout.BrokerID, m_BROKER_ID.c_str());
