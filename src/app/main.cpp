@@ -43,9 +43,12 @@ int main(int argc, char** argv) {
     std::atomic<bool> running{true};
     std::thread pollThread([&] {
       while (running.load(std::memory_order_relaxed)) {
-        transport.poll(10);
-        // Avoid BusySpinIdleStrategy-style CPU burn when the feed is idle.
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        const int work = transport.poll(10);
+        // Only back off when the poll queue is empty. Under load the loop
+        // continues immediately, so it does not cap message throughput.
+        if (work <= 0) {
+          std::this_thread::sleep_for(std::chrono::microseconds(100));
+        }
       }
     });
 
