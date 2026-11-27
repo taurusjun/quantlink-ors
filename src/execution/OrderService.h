@@ -7,6 +7,8 @@
 #include "execution/OrderStore.h"
 #include "orderresponse.h"
 
+class ORSServer;
+
 namespace ors {
 
 /// Order-side policy that does not own CTP or transport. It owns cross-order
@@ -21,6 +23,8 @@ class OrderService {
   void reject(const ::ors::infra::RequestMsg& request, const char* reason);
   void setNextOrderRef(int value);
   std::string takeOrderRef();
+  void sendNewOrder(ORSServer& server, ::ors::infra::RequestMsg& request);
+  void sendCancelOrder(ORSServer& server, ::ors::infra::RequestMsg& request);
 
   static constexpr std::uint32_t kCrossRejectCode = 1000101;
 

@@ -61,9 +61,12 @@ typedef struct _masterData
 typedef std::unordered_map<std::string, MasterData> SymbolMap;
 typedef std::unordered_map<std::string, MasterData>::iterator SymbolMapIter;
 
+class OrderService;
+
 class ORSServer : public CThostFtdcTraderSpi
 {
 public:
+    friend class ::ors::OrderService;
     ORSServer(::ors::OrsConfig config, ::ors::OrsTransport& transport,
               MDHandler& mdHandler,
               ::ors::md::MarketUpdateNew& marketUpdate);
