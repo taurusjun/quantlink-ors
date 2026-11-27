@@ -27,7 +27,7 @@
 #include "execution/OrderStore.h"
 #include "domain/PositionTable.h"
 #include "execution/ClientRegistry.h"
-#include "query/AccountQueryState.h"
+#include "query/AccountQueryService.h"
 #include "transport/OrsTransport.h"
 
 
@@ -185,7 +185,7 @@ private:
 
     ::ors::PositionTable positionTable_;
     ::ors::ClientRegistry clientRegistry_;
-    ::ors::AccountQueryState accountQueryState_;
+    ::ors::AccountQueryService accountQueryService_;
     std::thread accountQueryTimer_;
     std::atomic_bool stopRequested_{false};
     std::mutex readyMutex_;

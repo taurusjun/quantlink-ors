@@ -9,6 +9,10 @@ struct AccountQueryRequest {
   std::uint64_t requestId{0};
   std::string accountId;
   std::uint64_t timestamp{0};
+
+  static AccountQueryRequest of(std::uint64_t id, std::string account) {
+    return {id, std::move(account), 0};
+  }
 };
 
 struct AccountSnapshot {

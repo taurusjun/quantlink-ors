@@ -92,7 +92,14 @@ ORSServer::ORSServer(::ors::OrsConfig config, ::ors::OrsTransport& transport,
     : config_(std::move(config)),
       transport_(transport),
       mdHandler_(mdHandler),
-      marketUpdate_(marketUpdate) {
+      marketUpdate_(marketUpdate),
+      accountQueryService_(config_, transport_, [this](CThostFtdcQryTradingAccountField& query) {
+          const int requestId = ++m_iRequestID;
+          return m_pUserTradeApi != nullptr &&
+                         m_pUserTradeApi->ReqQryTradingAccount(&query, requestId) == 0
+                     ? requestId
+                     : -1;
+      }) {
     m_iRequestID = 0;
     iNextOrderRef = 0;
     m_connected = false;
@@ -128,18 +135,7 @@ void ORSServer::Start()
     accountQueryTimer_ = std::thread([this] {
         while (!stopRequested_.load() && m_connected.load()) {
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
-            const auto expired = accountQueryState_.expire(
-                std::chrono::steady_clock::now());
-            if (!expired.has_value()) {
-                continue;
-            }
-            ::ors::AccountSnapshot snapshot;
-            snapshot.requestId = *expired;
-            snapshot.accountId = config_.accountId;
-            snapshot.errorCode = 4;
-            snapshot.errorMsg = "account query timeout";
-            snapshot.timestamp = ::ors::nowNanos();
-            transport_.sendAccount(snapshot);
+            accountQueryService_.expire();
         }
     });
 
@@ -181,76 +177,24 @@ void ORSServer::RegisterClient(const ::ors::ClientRegisterRequest& request)
 
 void ORSServer::QueryAccount(const ::ors::AccountQueryRequest& request)
 {
-    auto sendError = [this, &request](std::uint32_t code, const char* message) {
+    if (!m_connected) {
         ::ors::AccountSnapshot snapshot;
         snapshot.requestId = request.requestId;
         snapshot.accountId = config_.accountId;
-        snapshot.errorCode = code;
-        snapshot.errorMsg = message;
+        snapshot.errorCode = 1;
+        snapshot.errorMsg = "ORS not ready";
         snapshot.timestamp = ::ors::nowNanos();
         transport_.sendAccount(snapshot);
-    };
-
-    if (!m_connected) {
-        sendError(1, "ORS not ready");
         return;
     }
-    if (!accountQueryState_.tryBegin(
-            request.requestId, std::chrono::steady_clock::now(),
-            std::chrono::milliseconds(config_.accountQueryTimeoutMs))) {
-        sendError(3, "account query busy or throttled");
-        return;
-    }
-
-    CThostFtdcQryTradingAccountField query;
-    memset(&query, 0, sizeof(query));
-    strcpy(query.BrokerID, m_BROKER_ID.c_str());
-    strcpy(query.InvestorID, m_INVESTOR_ID.c_str());
-    const int ctpRequestId = ++m_iRequestID;
-    accountQueryState_.bindCtpRequest(ctpRequestId);
-    if (m_pUserTradeApi->ReqQryTradingAccount(&query, ctpRequestId) != 0) {
-        accountQueryState_.finish();
-        sendError(2, "CTP account query rejected");
-    }
+    accountQueryService_.query(request);
 }
 
 void ORSServer::OnRspQryTradingAccount(
     CThostFtdcTradingAccountField *pAccount,
     CThostFtdcRspInfoField *pRspInfo, int nRequestID, bool bIsLast)
 {
-    const auto sdkRequestId = accountQueryState_.requestIdFor(nRequestID);
-    if (!sdkRequestId.has_value()) {
-        return;
-    }
-
-    auto error = [this, &sdkRequestId](std::uint32_t code, const char* message) {
-        ::ors::AccountSnapshot snapshot;
-        snapshot.requestId = *sdkRequestId;
-        snapshot.accountId = config_.accountId;
-        snapshot.errorCode = code;
-        snapshot.errorMsg = message;
-        snapshot.timestamp = ::ors::nowNanos();
-        transport_.sendAccount(snapshot);
-        accountQueryState_.finish();
-    };
-
-    if (pRspInfo != nullptr && pRspInfo->ErrorID != 0) {
-        error(static_cast<std::uint32_t>(pRspInfo->ErrorID), pRspInfo->ErrorMsg);
-        return;
-    }
-    if (!bIsLast) {
-        return;
-    }
-    if (pAccount == nullptr) {
-        error(5, "empty account query response");
-        return;
-    }
-
-    ::ors::AccountSnapshot snapshot =
-        ::ors::mapAccountSnapshot(*pAccount, *sdkRequestId, config_);
-    snapshot.timestamp = ::ors::nowNanos();
-    transport_.sendAccount(snapshot);
-    accountQueryState_.finish();
+    accountQueryService_.onResponse(pAccount, pRspInfo, nRequestID, bIsLast);
 }
 
 void ORSServer::RmsError(ResponseType resptype, uint32_t orderid,
