@@ -372,7 +372,7 @@ void ORSServer::SendNewOrder(RequestMsg *request)
     uint64_t curtime = ::ors::nowNanos();
     memset(&req, 0, sizeof(req));
 
-    if (!rms.executeNewOrderChecks(*request))
+    if (!rms_.impl().executeNewOrderChecks(*request))
     {
         ORS_LOG(INFO) << "NewOrder ------> "
                    << "NewOrder check failed. orderID:" << request->OrderID << std::endl;
@@ -619,7 +619,7 @@ void ORSServer::SendCancelOrder(RequestMsg *request)
     ordinfo = orders_.local()[request->OrderID];
     orders_.localMutex().unlock();
 
-    if (!rms.executeCancelOrderChecks(*request))
+    if (!rms_.impl().executeCancelOrderChecks(*request))
     {
         return;
     }
@@ -767,7 +767,7 @@ void ORSServer::PushUpdate(ResponseMsg *resp)
 
     // update RMS here
     if (rmsReady_) {
-        rms.handleORSResponse(resp);
+        rms_.impl().handleORSResponse(resp);
     }
 
     // to update Position map
@@ -886,7 +886,7 @@ void ORSServer::OnRtnInstrumentStatus(CThostFtdcInstrumentStatusField *pInstrume
      {
      fpContractFile.close();
      }
-     rms.setExchangeInstrDefinitionMap(m_symbolMap, true, true ,true);
+     rms_.impl().setExchangeInstrDefinitionMap(m_symbolMap, true, true ,true);
      }
      */
 }
@@ -920,20 +920,7 @@ void ORSServer::ReqQryInstrument(char *szInstrumentID)
 
 void ORSServer::ReqQryPosition()
 {
-    CThostFtdcQryInvestorPositionField request;
-    memset(&request, 0, sizeof(request));
-    strcpy(request.BrokerID, m_BROKER_ID.c_str());
-    strcpy(request.InvestorID, m_INVESTOR_ID.c_str());
-    const int result = m_pUserTradeApi->ReqQryInvestorPosition(
-        &request, ++m_iRequestID);
-    if (result != 0) {
-        ORS_LOG(INFO) << "Position query failed rc=" << result << std::endl;
-    }
-}
-
-void ORSServer::ReqQryAccount()
-{
-    return; // modify by pqr 20230213
+    startupQuery_->requestPosition();
 }
 
 void ORSServer::OnRspQryInstrument(CThostFtdcInstrumentField *pInstrument, CThostFtdcRspInfoField *pRspInfo, int nRequestID, bool bIsLast)
@@ -993,111 +980,29 @@ void ORSServer::OnRspQryInstrument(CThostFtdcInstrumentField *pInstrument, CThos
         ORS_LOG(INFO) << "--->>> " << tempTimeStamp << "|"
                    << "Instrument query complete" << std::endl;
         m_pUserMDSpi->SubscribeMarketData();
-        rms.setExchangeInstrDefinitionMap(m_symbolMap, true, true, false);
+        rms_.impl().setExchangeInstrDefinitionMap(m_symbolMap, true, true, false);
         ReqQryPosition();
     }
 }
 
+
 void ORSServer::OnRspQryInvestorPosition(
     CThostFtdcInvestorPositionField *pPosition,
-    CThostFtdcRspInfoField *pRspInfo, int nRequestID, bool bIsLast)
+    CThostFtdcRspInfoField *pRspInfo, int, bool bIsLast)
 {
-    if (pRspInfo != nullptr && pRspInfo->ErrorID != 0) {
-        pendingPositionRows_.clear();
-        ORS_LOG(INFO) << "Position query error: " << pRspInfo->ErrorID << " "
-                   << pRspInfo->ErrorMsg << std::endl;
-        return;
-    }
-
-    if (pPosition != nullptr) {
-        ::ors::PositionRow row;
-        row.instrumentId = pPosition->InstrumentID;
-        row.side = pPosition->PosiDirection == THOST_FTDC_PD_Short
-                       ? ::ors::PositionSide::Short
-                       : ::ors::PositionSide::Long;
-        row.position = pPosition->Position;
-        row.todayPosition = pPosition->TodayPosition;
-        pendingPositionRows_.push_back(std::move(row));
-    }
-
-    if (bIsLast) {
-        positionTable_.replaceFromQuery(std::move(pendingPositionRows_));
-        pendingPositionRows_.clear();
-        m_connected.store(true);
-        readyCv_.notify_all();
-        ORS_LOG(INFO) << "Position query complete; ORS ready" << std::endl;
-        ReqQryOrder();
-    }
+    startupQuery_->onPosition(pPosition, pRspInfo, bIsLast);
 }
 
 void ORSServer::ReqQryOrder()
 {
-    if (startupOrderQueryIssued_) {
-        return;
-    }
-    startupOrderQueryIssued_ = true;
-    CThostFtdcQryOrderField request;
-    memset(&request, 0, sizeof(request));
-    strcpy(request.BrokerID, m_BROKER_ID.c_str());
-    strcpy(request.InvestorID, m_INVESTOR_ID.c_str());
-    const int result = m_pUserTradeApi->ReqQryOrder(&request, ++m_iRequestID);
-    if (result != 0) {
-        ::ors::log::error("ors.startup.order_query_failed",
-                          {{"severity", "P1"},
-                           {"message", "CTP order query rejected"},
-                           {"return_code", result}});
-        std::cerr << "ORS_ALERT startup_order_query_failed return=" << result << '\n';
-    }
+    // StartupQuery issues the order query after position READY.
 }
 
 void ORSServer::OnRspQryOrder(CThostFtdcOrderField *pOrder,
                               CThostFtdcRspInfoField *pRspInfo,
                               int, bool bIsLast)
 {
-    if (pRspInfo != nullptr && pRspInfo->ErrorID != 0) {
-        pendingStartupOrders_.clear();
-        ::ors::log::error("ors.startup.order_query_failed",
-                          {{"severity", "P1"},
-                           {"message", pRspInfo->ErrorMsg},
-                           {"return_code", pRspInfo->ErrorID}});
-        std::cerr << "ORS_ALERT startup_order_query_failed code="
-                  << pRspInfo->ErrorID << '\n';
-        return;
-    }
-    if (pOrder != nullptr) {
-        pendingStartupOrders_.push_back(*pOrder);
-    }
-    if (!bIsLast) {
-        return;
-    }
-
-    if (::ors::hasLiveOrders(pendingStartupOrders_)) {
-        std::string refs;
-        for (const auto &order : pendingStartupOrders_) {
-            if (order.OrderStatus == THOST_FTDC_OST_AllTraded ||
-                order.OrderStatus == THOST_FTDC_OST_Canceled) {
-                continue;
-            }
-            if (!refs.empty()) {
-                refs += ',';
-            }
-            refs += order.OrderRef;
-            if (refs.size() >= 512) {
-                break;
-            }
-        }
-        ::ors::log::error("ors.startup.live_orders",
-                          {{"severity", "P1"},
-                           {"message", "CTP has live orders at startup"},
-                           {"count", static_cast<int>(pendingStartupOrders_.size())},
-                           {"order_refs", refs}});
-        std::cerr << "ORS_ALERT startup_live_orders count="
-                  << pendingStartupOrders_.size() << " refs=" << refs << '\n';
-    } else {
-        ::ors::log::info("ors.startup.orders_flat",
-                         {{"message", "no live CTP orders at startup"}});
-    }
-    pendingStartupOrders_.clear();
+    startupQuery_->onOrders(pOrder, pRspInfo, bIsLast);
 }
 
 void ORSServer::ReqSettlementInfoConfirm()
@@ -1218,7 +1123,7 @@ bool ORSServer::OrderCrossCheck(RequestMsg *request)
  uint64_t rmstime, apisend;
  uint64_t curtime = ::ors::nowNanos() ;
  /*
- if (!rms.executeCancelOrderChecks(*request))
+ if (!rms_.impl().executeCancelOrderChecks(*request))
  {
  return;
  }
@@ -1376,7 +1281,7 @@ void ORSServer::OnRspOrderInsert(CThostFtdcInputOrderField *pInputOrder, CThostF
         // ordinfo.Qty = pInputOrder->VolumeTotalOriginal;
 
         strcpy(ordinfo.OrderSysID, pInputOrder->OrderRef);
-        // switch(rms.getLastRequestOutgoingState (response))
+        // switch(rms_.impl().getLastRequestOutgoingState (response))
         switch (ordinfo.requestType)
         {
         case NEWORDER:
@@ -1438,7 +1343,7 @@ void ORSServer::OnErrRtnOrderAction(CThostFtdcOrderActionField *pOrderAction, CT
         ordinfo.Price = pOrderAction->LimitPrice;
 
         strcpy(ordinfo.OrderSysID, pOrderAction->OrderRef);
-        // switch(rms.getLastRequestOutgoingState (response))
+        // switch(rms_.impl().getLastRequestOutgoingState (response))
         switch (ordinfo.requestType)
         {
         case NEWORDER:
@@ -1503,7 +1408,7 @@ void ORSServer::OnErrRtnOrderInsert(CThostFtdcInputOrderField *pInputOrder, CTho
         // ordinfo.Qty = pInputOrder->VolumeTotalOriginal;
 
         strcpy(ordinfo.OrderSysID, pInputOrder->OrderRef);
-        // switch(rms.getLastRequestOutgoingState (response))
+        // switch(rms_.impl().getLastRequestOutgoingState (response))
         tempTimeStamp = ::ors::nowNanos();
         switch (ordinfo.requestType)
         {
@@ -1908,7 +1813,7 @@ void ORSServer::HandleSignals()
         case SIGUSR1:
         {
             ORS_LOG(INFO) << "Resetting RMS state." << std::endl;
-            rms.reset();
+            rms_.impl().reset();
             break;
         }
         case SIGUSR2:

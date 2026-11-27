@@ -25,9 +25,11 @@
 #include "domain/OrsTypes.h"
 #include "domain/OrderInfo.h"
 #include "execution/OrderStore.h"
+#include "execution/RmsGate.h"
 #include "domain/PositionTable.h"
 #include "execution/ClientRegistry.h"
 #include "query/AccountQueryService.h"
+#include "query/StartupQuery.h"
 #include "transport/OrsTransport.h"
 
 
@@ -82,7 +84,7 @@ public:
 
     ::ors::infra::RmsImpl &getRms()
     {
-        return rms;
+        return rms_.impl();
     }
 
     SymbolMap m_symbolMap;
@@ -181,7 +183,7 @@ private:
 
     int m_logoffResp;
     int m_logonResp;
-    ::ors::infra::RmsImpl rms;
+    ::ors::RmsGate rms_;
 
     ::ors::PositionTable positionTable_;
     ::ors::ClientRegistry clientRegistry_;
@@ -192,9 +194,7 @@ private:
     std::condition_variable readyCv_;
     bool clientRegistered_{false};
     bool rmsReady_{false};
-    std::vector<::ors::PositionRow> pendingPositionRows_;
-    std::vector<CThostFtdcOrderField> pendingStartupOrders_;
-    bool startupOrderQueryIssued_{false};
+    std::unique_ptr<::ors::StartupQuery> startupQuery_;
 
     std::string m_rmsConfigFile;
     std::string m_rmsFirmwideConfigFile;
