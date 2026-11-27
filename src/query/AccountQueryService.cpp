@@ -2,6 +2,7 @@
 
 #include <cstring>
 
+#include "infra/LogFacade.h"
 #include "infra/Time.h"
 #include "query/QueryMapping.h"
 
@@ -84,6 +85,13 @@ void AccountQueryService::sendError(std::uint64_t requestId,
   snapshot.errorCode = code;
   snapshot.errorMsg = message == nullptr ? "" : message;
   snapshot.timestamp = nowNanos();
+  log::warn("ors.account.query_failed",
+            {{"type", "account"},
+             {"account_id", config_.accountId},
+             {"request_id", std::to_string(requestId)},
+             {"error_code", std::to_string(code)},
+             {"error_message", snapshot.errorMsg},
+             {"message", "account query failed"}});
   transport_.sendAccount(snapshot);
 }
 

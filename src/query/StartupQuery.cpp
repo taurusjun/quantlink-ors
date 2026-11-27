@@ -23,7 +23,11 @@ void StartupQuery::requestPosition() {
   const int result = positionRequest_(request);
   if (result <= 0) {
     log::error("ors.startup.position_query_failed",
-               {{"severity", "P1"}, {"return_code", result}});
+               {{"type", "system"},
+                {"account_id", config_.accountId},
+                {"severity", "P1"},
+                {"error_code", std::to_string(result)},
+                {"message", "position query request failed"}});
   }
 }
 
@@ -32,9 +36,12 @@ void StartupQuery::onPosition(CThostFtdcInvestorPositionField* position,
   if (info != nullptr && info->ErrorID != 0) {
     pendingPositions_.clear();
     log::error("ors.startup.position_query_failed",
-               {{"severity", "P1"},
-                {"return_code", info->ErrorID},
-                {"message", info->ErrorMsg}});
+               {{"type", "system"},
+                {"account_id", config_.accountId},
+                {"severity", "P1"},
+                {"error_code", std::to_string(info->ErrorID)},
+                {"error_message", info->ErrorMsg},
+                {"message", "position query failed"}});
     return;
   }
   if (position != nullptr) {
@@ -56,7 +63,10 @@ void StartupQuery::onPosition(CThostFtdcInvestorPositionField* position,
   if (ready_) {
     ready_();
   }
-  log::info("ors.startup.position_ready", {{"message", "ORS ready"}});
+  log::info("ors.startup.position_ready",
+            {{"type", "system"},
+             {"account_id", config_.accountId},
+             {"message", "ORS ready"}});
   requestOrders();
 }
 
@@ -72,7 +82,11 @@ void StartupQuery::requestOrders() {
   const int result = orderRequest_(request);
   if (result <= 0) {
     log::error("ors.startup.order_query_failed",
-               {{"severity", "P1"}, {"return_code", result}});
+               {{"type", "system"},
+                {"account_id", config_.accountId},
+                {"severity", "P1"},
+                {"error_code", std::to_string(result)},
+                {"message", "order query request failed"}});
   }
 }
 
@@ -81,9 +95,12 @@ void StartupQuery::onOrders(CThostFtdcOrderField* order,
   if (info != nullptr && info->ErrorID != 0) {
     pendingOrders_.clear();
     log::error("ors.startup.order_query_failed",
-               {{"severity", "P1"},
-                {"return_code", info->ErrorID},
-                {"message", info->ErrorMsg}});
+               {{"type", "system"},
+                {"account_id", config_.accountId},
+                {"severity", "P1"},
+                {"error_code", std::to_string(info->ErrorID)},
+                {"error_message", info->ErrorMsg},
+                {"message", "order query failed"}});
     return;
   }
   if (order != nullptr) {
@@ -105,13 +122,17 @@ void StartupQuery::onOrders(CThostFtdcOrderField* order,
       if (refs.size() >= 512) break;
     }
     log::error("ors.startup.live_orders",
-               {{"severity", "P1"},
+               {{"type", "system"},
+                {"account_id", config_.accountId},
+                {"severity", "P1"},
                 {"message", "CTP has live orders at startup"},
                 {"count", static_cast<int>(pendingOrders_.size())},
                 {"order_refs", refs}});
   } else {
     log::info("ors.startup.orders_flat",
-              {{"message", "no live CTP orders at startup"}});
+              {{"type", "system"},
+               {"account_id", config_.accountId},
+               {"message", "no live CTP orders at startup"}});
   }
   pendingOrders_.clear();
 }
