@@ -5,6 +5,7 @@
 #include <cstdio>
 #include <cstring>
 
+#include "execution/OrderLog.h"
 #include "infra/LogFacade.h"
 #include "infra/Time.h"
 
@@ -25,8 +26,11 @@ bool OrderService::crossCheck(const ::ors::infra::RequestMsg& request) {
           (request.Price >= open.Price || request.Price == 0))) &&
         std::strcmp(request.Contract_Description.Symbol, open.ScripCode) == 0) {
       log::info("ors.order.cross_reject",
-                {{"open_order_id", std::to_string(entry.first)},
-                 {"new_order_id", std::to_string(request.OrderID)}});
+                {{"type", "order"},
+                 {"open_order_id", std::to_string(entry.first)},
+                 {"new_order_id", std::to_string(request.OrderID)},
+                 {"status", "rejected"},
+                 {"message", "crossing order rejected"}});
       return true;
     }
   }
@@ -58,8 +62,12 @@ void OrderService::reject(const ::ors::infra::RequestMsg& request,
   std::strncpy(response.AccountID, request.AccountID,
                sizeof(response.AccountID) - 1);
   log::warn("ors.order.rejected",
-            {{"order_id", std::to_string(request.OrderID)},
-             {"reason", reason == nullptr ? "" : reason}});
+            {{"type", "order"},
+             {"order_id", std::to_string(request.OrderID)},
+             {"status", "rejected"},
+             {"error_code", std::to_string(response.ErrorCode)},
+             {"error_message", reason == nullptr ? "" : reason},
+             {"message", "order rejected by ORS"}});
   if (push_) {
     push_(&response);
   }
@@ -68,8 +76,6 @@ void OrderService::reject(const ::ors::infra::RequestMsg& request,
 
 void OrderService::sendNewOrder(ORSServer& server, ::ors::infra::RequestMsg& requestRef)
 {
-    server.tempTimeStamp = ::ors::nowNanos();
-    ORS_LOG(INFO) << "NewOrder ------> " << server.tempTimeStamp << "|" << __FUNCTION__ << " start OrderRef" << requestRef.OrderID << std::endl;
     int iResult;
     CThostFtdcInputOrderField req;
     ::ors::OrderInfo ordinfo;
@@ -80,8 +86,6 @@ void OrderService::sendNewOrder(ORSServer& server, ::ors::infra::RequestMsg& req
 
     if (!server.rms_.impl().executeNewOrderChecks(requestRef))
     {
-        ORS_LOG(INFO) << "NewOrder ------> "
-                   << "NewOrder check failed. orderID:" << requestRef.OrderID << std::endl;
         return;
     }
     rmstime = ::ors::nowNanos();
@@ -281,15 +285,16 @@ void OrderService::sendNewOrder(ORSServer& server, ::ors::infra::RequestMsg& req
     orders_.exchange()[std::string(req.OrderRef)] = requestRef.OrderID;
     orders_.exchangeMutex().unlock();
 
-    server.tempTimeStamp = ::ors::nowNanos();
+    logOrderEvent("ors.order.submitted", "order submitted to CTP", ordinfo,
+                  "submitted", OrderLogLevel::Info, 0, ordinfo.Price,
+                  ordinfo.Qty, 0, ordinfo.openQty);
+
     //  ORS_LOG(INFO) << "--->>> "<< server.tempTimeStamp << "|" << "New Order placed | " << requestRef.Contract_Description.Symbol << " " << requestRef.OrderID  << " " << ORDER_REF << " " << requestRef.Price << " " << requestRef.Quantity << std::endl ;
     // ORS_LOG(INFO) << "------> "<< server.tempTimeStamp << "|" << __FUNCTION__  << " end OrderRef"<< requestRef.OrderID << std::endl;
 }
 
 void OrderService::sendCancelOrder(ORSServer& server, ::ors::infra::RequestMsg& requestRef)
 {
-    server.tempTimeStamp = ::ors::nowNanos();
-    ORS_LOG(INFO) << "------> " << server.tempTimeStamp << "|" << __FUNCTION__ << " start OrderRef" << requestRef.OrderID << std::endl;
     CThostFtdcInputOrderActionField req;
     ::ors::OrderInfo ordinfo;
     int iResult;
@@ -343,9 +348,7 @@ void OrderService::sendCancelOrder(ORSServer& server, ::ors::infra::RequestMsg& 
     strcpy(req.OrderSysID, ordinfo.OrderSysID);
 
     apisend = ::ors::nowNanos();
-    ORS_LOG(INFO) << "After API call 4\n";
     iResult = server.m_pUserTradeApi->ReqOrderAction(&req, ++server.m_iRequestID);
-    ORS_LOG(INFO) << "After API call 4\n";
     if (iResult != 0)
     {
         server.RejectOrder(&requestRef, "Cancel order send error");
@@ -361,10 +364,10 @@ void OrderService::sendCancelOrder(ORSServer& server, ::ors::infra::RequestMsg& 
     orders_.local()[requestRef.OrderID] = ordinfo;
     orders_.localMutex().unlock();
 
-    server.tempTimeStamp = ::ors::nowNanos();
-    ORS_LOG(INFO) << "--->>> " << server.tempTimeStamp << "|"
-               << "Cancel order sent | " << ordinfo.localID << " | " << ordinfo.exchID << '|' << requestRef.Price << '|' << requestRef.Quantity << std::endl;
-    ORS_LOG(INFO) << "------> " << server.tempTimeStamp << "|" << __FUNCTION__ << " end OrderRef" << requestRef.OrderID << std::endl;
+    logOrderEvent("ors.order.cancel_requested",
+                  "cancel request submitted to CTP", ordinfo,
+                  "cancel_requested", OrderLogLevel::Info, 0,
+                  requestRef.Price, requestRef.Quantity, 0, ordinfo.Qty);
 
 }
 
