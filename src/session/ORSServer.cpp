@@ -204,10 +204,14 @@ void ORSServer::Stop()
         accountQueryTimer_.join();
     }
     if (wasConnected) {
-        ORS_LOG(INFO) << "Logging off\n";
+        log::info("ors.session.logout", {{"type", "session"},
+                  {"account_id", config_.accountId},
+                  {"message", "logging off"}});
         DoLoggOff();
     }
-    ORS_LOG(INFO) << "Exiting\n";
+    log::info("ors.session.stop", {{"type", "session"},
+              {"account_id", config_.accountId},
+              {"message", "ORS exiting"}});
 }
 
 void ORSServer::RegisterClient(const ::ors::ClientRegisterRequest& request)
@@ -294,17 +298,16 @@ void ORSServer::DoLoggOff()
     iResult = m_pUserTradeApi->ReqUserLogout(&pUserLogout, ++m_iRequestID);
     if (!iResult)
     {
-        tempTimeStamp = ::ors::nowNanos();
-        ORS_LOG(INFO) << "|" << tempTimeStamp << "|"
-                   << "Logout sent" << std::endl;
-        // while (!m_logoffResp) {
-        // }
+        log::info("ors.session.logout", {{"type", "session"},
+                  {"account_id", config_.accountId},
+                  {"message", "logout sent"}});
     }
     else
     {
-        tempTimeStamp = ::ors::nowNanos();
-        ORS_LOG(INFO) << "|" << tempTimeStamp << "|"
-                   << "Logout sent error " << iResult << std::endl;
+        log::error("ors.session.logout", {{"type", "session"},
+                   {"account_id", config_.accountId},
+                   {"error_code", std::to_string(iResult)},
+                   {"message", "logout send failed"}});
     }
 }
 
@@ -334,9 +337,12 @@ void ORSServer::Login()
             config_.mdFlowDir.c_str()));
     }
 
-    tempTimeStamp = ::ors::nowNanos();
-    ORS_LOG(INFO) << "|" << tempTimeStamp << "|"
-               << "Logging in to MD " << FRONT_ADDR_MD << "|" << m_BROKER_ID << "|" << m_INVESTOR_ID << std::endl;
+    log::info("ors.session.login", {{"type", "session"},
+              {"venue_id", config_.venueId},
+              {"account_id", config_.accountId},
+              {"ors_id", config_.orsId},
+              {"front_address", FRONT_ADDR_MD},
+              {"message", "logging in to market data front"}});
     // create MD classes
     m_pUserMDSpi = std::make_unique<CMdSpi>(
         m_pUserMDApi.get(), *this, mdHandler_, marketUpdate_);
@@ -345,9 +351,12 @@ void ORSServer::Login()
     // m_pUserMDSpi->ReqUserLogin((char*)m_BROKER_ID.c_str(), (char*)m_INVESTOR_ID.c_str(), (char*)m_PASSWORD.c_str());
     m_pUserMDApi->Init();
 
-    tempTimeStamp = ::ors::nowNanos();
-    ORS_LOG(INFO) << "|" << tempTimeStamp << "|"
-               << "Logging in to ORS " << FRONT_ADDR_ORS << "|" << m_BROKER_ID << "|" << m_INVESTOR_ID << std::endl;
+    log::info("ors.session.login", {{"type", "session"},
+              {"venue_id", config_.venueId},
+              {"account_id", config_.accountId},
+              {"ors_id", config_.orsId},
+              {"front_address", FRONT_ADDR_ORS},
+              {"message", "logging in to trading front"}});
     // create trade classes
     m_pUserTradeApi->RegisterSpi((CThostFtdcTraderSpi *)this);
     // we will log trades and re-consile orders
@@ -361,13 +370,17 @@ void ORSServer::Login()
 
 void ORSServer::OnRspUserLogout(CThostFtdcUserLogoutField *pUserLogout, CThostFtdcRspInfoField *pRspInfo, int nRequestID, bool bIsLast)
 {
-    tempTimeStamp = ::ors::nowNanos();
-    if (bIsLast && !IsErrorRspInfo(pRspInfo))
-        ORS_LOG(INFO) << "|" << tempTimeStamp << "|"
-                   << "User logged out successfully" << std::endl;
-    else
-        ORS_LOG(INFO) << "|" << tempTimeStamp << "|"
-                   << "User logged out failure" << std::endl;
+    if (bIsLast && !IsErrorRspInfo(pRspInfo)) {
+        log::info("ors.session.logout", {{"type", "session"},
+                  {"account_id", config_.accountId},
+                  {"message", "user logged out"}});
+    } else {
+        log::error("ors.session.logout", {{"type", "session"},
+                  {"account_id", config_.accountId},
+                  {"error_code", pRspInfo == nullptr ? "" : std::to_string(pRspInfo->ErrorID)},
+                  {"error_message", pRspInfo == nullptr ? "" : pRspInfo->ErrorMsg},
+                  {"message", "user logout failed"}});
+    }
     m_logoffResp = true;
 }
 
@@ -743,35 +756,34 @@ void ORSServer::Authenticate()
     strncpy(authReq.AppID, m_APPID.c_str(), sizeof(TThostFtdcAppIDType));
     auto ret = m_pUserTradeApi->ReqAuthenticate(&authReq, m_iRequestID++);
 
-    ORS_LOG(INFO) << "|ctp auth response:[" << ret << "], waiting for auth push" << std::endl;
-    std::cout << "ctp auth response:[" << ret << "], waiting for auth push" << endl;
+    log::info("ors.session.authenticate", {{"type", "session"},
+              {"account_id", config_.accountId},
+              {"result", ret},
+              {"message", "CTP authenticate requested"}});
 }
 
 void ORSServer::ReqUserLogin()
 {
-    tempTimeStamp = ::ors::nowNanos();
-    ORS_LOG(INFO) << "|" << tempTimeStamp << "|" << __FUNCTION__ << std::endl;
     CThostFtdcReqUserLoginField req;
     memset(&req, 0, sizeof(req));
     strcpy(req.BrokerID, m_BROKER_ID.c_str());
     strcpy(req.UserID, m_INVESTOR_ID.c_str());
     strcpy(req.Password, m_PASSWORD.c_str());
-    tempTimeStamp = ::ors::nowNanos();
-    ORS_LOG(INFO) << "|" << tempTimeStamp << "|"
-               << "BrokerID " << req.BrokerID << " UserID " << req.UserID << std::endl;
     m_logonResp = false;
     int iResult = m_pUserTradeApi->ReqUserLogin(&req, ++m_iRequestID);
     if (!iResult)
     {
-        tempTimeStamp = ::ors::nowNanos();
-        ORS_LOG(INFO) << "|" << tempTimeStamp << "|"
-                   << "Login send success" << std::endl;
+        log::info("ors.session.login", {{"type", "session"},
+                  {"account_id", config_.accountId},
+                  {"result", iResult},
+                  {"message", "login request sent"}});
     }
     else
     {
-        tempTimeStamp = ::ors::nowNanos();
-        ORS_LOG(ERROR) << "|" << tempTimeStamp << "|"
-                   << "Login send failure" << std::endl;
+        log::error("ors.session.login_failed", {{"type", "session"},
+                   {"account_id", config_.accountId},
+                   {"error_code", std::to_string(iResult)},
+                   {"message", "login request failed"}});
         return;
     }
     // ReqUserLogin(req.BrokerID, req.UserID, req.Password);
@@ -779,18 +791,19 @@ void ORSServer::ReqUserLogin()
 
 void ORSServer::OnFrontConnected()
 {
-    tempTimeStamp = ::ors::nowNanos();
-    ORS_LOG(INFO) << "|" << tempTimeStamp << "|"
-               << "OnFrontConnected ORS" << std::endl;
+    log::info("ors.session.connected", {{"type", "session"},
+              {"venue_id", config_.venueId},
+              {"account_id", config_.accountId},
+              {"message", "trading front connected"}});
     Authenticate();
     // ReqUserLogin();
 }
 
 void ORSServer::OnRspSettlementInfoConfirm(CThostFtdcSettlementInfoConfirmField *pSettlementInfoConfirm, CThostFtdcRspInfoField *pRspInfo, int nRequestID, bool bIsLast)
 {
-    tempTimeStamp = ::ors::nowNanos();
-    ORS_LOG(INFO) << "|" << tempTimeStamp << "|"
-               << "OnRspSettlementInfoConfirm" << std::endl;
+    log::info("ors.session.settlement_confirmed", {{"type", "session"},
+              {"account_id", config_.accountId},
+              {"message", "settlement info confirmed"}});
     if (bIsLast && !IsErrorRspInfo(pRspInfo))
     {
         if (config_.instrument.empty()) {
@@ -1411,7 +1424,8 @@ void ORSServer::OnRtnTrade(CThostFtdcTradeField *pTrade)
 
 void ORSServer::installSignals()
 {
-    ORS_LOG(INFO) << "Installing signals\n";
+    log::info("ors.session.signal", {{"type", "session"},
+              {"message", "installing signal handlers"}});
     sigfillset(&m_signalSet);
     sigaddset(&m_signalSet, SIGUSR1);
     sigaddset(&m_signalSet, SIGUSR2);
@@ -1420,7 +1434,10 @@ void ORSServer::installSignals()
     sigaddset(&m_signalSet, SIGTERM);
     if (pthread_sigmask(SIG_BLOCK, &m_signalSet, NULL) != 0)
     {
-        ORS_LOG(FATAL) << "sigmask error: " << strerror(errno) << std::endl;
+        log::error("ors.session.signal", {{"type", "session"},
+                   {"error_code", std::to_string(errno)},
+                   {"error_message", strerror(errno)},
+                   {"message", "signal mask failed"}});
         throw("sigmask error");
     }
 }
@@ -1431,43 +1448,48 @@ void ORSServer::HandleSignals()
     int32_t sig = 0;
     while (!stopRequested_.load())
     {
-        ORS_LOG(INFO) << "Signal handler thread sleeping\n";
+        log::info("ors.session.signal", {{"type", "session"},
+                  {"message", "signal handler waiting"}});
         if (sigwait(&m_signalSet, &sig) != 0)
         {
-            ORS_LOG(FATAL) << "Sigwait error " << std::endl;
+            log::error("ors.session.signal", {{"type", "session"},
+                       {"message", "sigwait failed"}});
         }
 
         switch (sig)
         {
         case SIGTSTP: // ctrl+z
         {
-            ORS_LOG(INFO) << "Attempting ORS normal exit." << std::endl;
-            ORS_LOG(INFO) << "Shutting down the SHM manager \n";
+            log::info("ors.session.signal", {{"type", "session"},
+                      {"message", "ORS normal exit requested"}});
             Stop();
             break;
         }
         case SIGTERM: // default by kill command
         {
-            ORS_LOG(INFO) << "Attempting ORS normal exit." << std::endl;
-            ORS_LOG(INFO) << "Shutting down the SHM manager \n";
+            log::info("ors.session.signal", {{"type", "session"},
+                      {"message", "ORS normal exit requested"}});
             Stop();
             break;
         }
         case SIGINT: // ctrl+c
         {
-            ORS_LOG(INFO) << "ORS  exiting." << std::endl;
+            log::info("ors.session.signal", {{"type", "session"},
+                      {"message", "ORS interrupt exit"}});
             Stop();
             break;
         }
         case SIGUSR1:
         {
-            ORS_LOG(INFO) << "Resetting RMS state." << std::endl;
+            log::info("ors.session.signal", {{"type", "session"},
+                      {"message", "reset RMS state"}});
             rms_.impl().reset();
             break;
         }
         case SIGUSR2:
         {
-            ORS_LOG(INFO) << "Fetch positions " << std::endl;
+            log::info("ors.session.signal", {{"type", "session"},
+                      {"message", "fetch positions requested"}});
             ReqQryPosition();
             break;
         }
@@ -1475,7 +1497,9 @@ void ORSServer::HandleSignals()
         default:
         {
 
-            ORS_LOG(INFO) << "Received Unhandled signal: " << sig << std::endl;
+            log::warn("ors.session.signal", {{"type", "session"},
+                      {"signal", sig},
+                      {"message", "unhandled signal"}});
         }
         }
     }

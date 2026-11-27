@@ -18,7 +18,13 @@ void ORSServer::OnRspAuthenticate(CThostFtdcRspAuthenticateField *,
 
 void ORSServer::OnFrontDisconnected(int nReason) {
   m_connected = false;
-  ORS_LOG(INFO) << "Front disconnected: " << nReason << std::endl;
+  ::ors::log::warn("ors.session.disconnected",
+                   {{"type", "session"},
+                    {"venue_id", config_.venueId},
+                    {"account_id", config_.accountId},
+                    {"ors_id", config_.orsId},
+                    {"error_code", std::to_string(nReason)},
+                    {"message", "CTP front disconnected"}});
 }
 
 void ORSServer::OnRspError(CThostFtdcRspInfoField *pRspInfo, int, bool) {
@@ -26,14 +32,24 @@ void ORSServer::OnRspError(CThostFtdcRspInfoField *pRspInfo, int, bool) {
 }
 
 void ORSServer::OnHeartBeatWarning(int nTimeLapse) {
-  ORS_LOG(INFO) << "Heartbeat warning: " << nTimeLapse << std::endl;
+  ::ors::log::warn("ors.session.heartbeat_warning",
+                   {{"type", "session"},
+                    {"venue_id", config_.venueId},
+                    {"account_id", config_.accountId},
+                    {"duration_us", static_cast<double>(nTimeLapse) * 1000000.0},
+                    {"message", "CTP heartbeat warning"}});
 }
 
 bool ORSServer::IsErrorRspInfo(CThostFtdcRspInfoField *pRspInfo) {
   const bool failed = pRspInfo != nullptr && pRspInfo->ErrorID != 0;
   if (failed) {
-    ORS_LOG(INFO) << "CTP error " << pRspInfo->ErrorID << ": "
-               << pRspInfo->ErrorMsg << std::endl;
+    ::ors::log::error("ors.session.error",
+                      {{"type", "session"},
+                       {"venue_id", config_.venueId},
+                       {"account_id", config_.accountId},
+                       {"error_code", std::to_string(pRspInfo->ErrorID)},
+                       {"error_message", pRspInfo->ErrorMsg},
+                       {"message", "CTP error"}});
   }
   return failed;
 }
@@ -42,7 +58,13 @@ void ORSServer::OnRspUserLogin(CThostFtdcRspUserLoginField *pRspUserLogin,
                                CThostFtdcRspInfoField *pRspInfo, int,
                                bool bIsLast) {
   if (!bIsLast || IsErrorRspInfo(pRspInfo)) {
-    ORS_LOG(INFO) << "Trader login failed" << std::endl;
+    ::ors::log::error("ors.session.login_failed",
+                      {{"type", "session"},
+                       {"venue_id", config_.venueId},
+                       {"account_id", config_.accountId},
+                       {"error_code", pRspInfo == nullptr ? "" : std::to_string(pRspInfo->ErrorID)},
+                       {"error_message", pRspInfo == nullptr ? "" : pRspInfo->ErrorMsg},
+                       {"message", "trader login failed"}});
     return;
   }
 
@@ -52,7 +74,13 @@ void ORSServer::OnRspUserLogin(CThostFtdcRspUserLoginField *pRspUserLogin,
 
   if (m_pUserMDSpi != nullptr &&
       !m_pUserMDSpi->waitForLogin(std::chrono::seconds(3))) {
-    ORS_LOG(ERROR) << "MD login timeout; ORS startup aborted" << std::endl;
+    ::ors::log::error("ors.session.login_failed",
+                      {{"type", "session"},
+                       {"venue_id", config_.venueId},
+                       {"account_id", config_.accountId},
+                       {"error_code", "md_login_timeout"},
+                       {"error_message", "MD login timeout"},
+                       {"message", "ORS startup aborted"}});
     return;
   }
 
