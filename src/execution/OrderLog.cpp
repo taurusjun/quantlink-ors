@@ -77,6 +77,7 @@ void logOrderEvent(const char* event, const char* message,
   const auto fields = std::initializer_list<log::LogField>{
       {"type", "order"},
       {"order_id", std::to_string(order.localID)},
+      {"strategy_id", order.strategyId},
       {"order_ref", trim(order.exchID)},
       {"exchange_order_id", trim(order.OrderSysID)},
       {"front_id", order.frontId},

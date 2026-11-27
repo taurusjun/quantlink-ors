@@ -67,6 +67,7 @@ void copyText(char (&destination)[N], std::string_view value) {
   request.setAccountId(text(decoder.accountId(), 11).c_str());
   request.Transaction_Type = static_cast<unsigned char>(decoder.transactionType());
   request.Exchange_Type = decoder.exchangeType();
+  request.StrategyID = decoder.strategyId();
   return request;
 }
 

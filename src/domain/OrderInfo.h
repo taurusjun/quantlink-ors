@@ -26,6 +26,7 @@ struct OrderInfo {
   std::uint64_t sendTime;
   int frontId;
   int sessionId;
+  int strategyId{0};
   char exchange;
   int qtyType;
 };

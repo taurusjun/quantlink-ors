@@ -37,7 +37,8 @@ int main() {
       .timestamp(123)
       .putAccountId("142266")
       .transactionType(TransactionType::BUY)
-      .exchangeType(57);
+      .exchangeType(57)
+      .strategyId(14526);
 
   MessageHeader requestHeader;
   requestHeader.wrap(buffer, 0, 0, sizeof(buffer));
@@ -45,7 +46,7 @@ int main() {
   requestDecoder.wrapForDecode(buffer, MessageHeader::encodedLength(), requestHeader.blockLength(), requestHeader.version(), sizeof(buffer));
   const auto decodedRequest = ::ors::decodeRequest(requestDecoder);
   if (decodedRequest.OrderID != 42 || decodedRequest.Quantity != 2 ||
-      decodedRequest.Price != 735.5 ||
+      decodedRequest.Price != 735.5 || decodedRequest.StrategyID != 14526 ||
       std::string(decodedRequest.Contract_Description.Symbol) != "au2612") {
     std::cerr << "request mapping failed\n";
     return 1;

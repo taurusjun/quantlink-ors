@@ -29,6 +29,7 @@ bool OrderService::crossCheck(const ::ors::infra::RequestMsg& request) {
                 {{"type", "order"},
                  {"open_order_id", std::to_string(entry.first)},
                  {"new_order_id", std::to_string(request.OrderID)},
+                 {"strategy_id", request.StrategyID},
                  {"status", "rejected"},
                  {"message", "crossing order rejected"}});
       return true;
@@ -64,6 +65,7 @@ void OrderService::reject(const ::ors::infra::RequestMsg& request,
   log::warn("ors.order.rejected",
             {{"type", "order"},
              {"order_id", std::to_string(request.OrderID)},
+             {"strategy_id", request.StrategyID},
              {"status", "rejected"},
              {"error_code", std::to_string(response.ErrorCode)},
              {"error_message", reason == nullptr ? "" : reason},
@@ -275,6 +277,7 @@ void OrderService::sendNewOrder(ORSServer& server, ::ors::infra::RequestMsg& req
     ordinfo.sendTime = endtime;
     ordinfo.frontId = server.FRONT_ID;
     ordinfo.sessionId = server.SESSION_ID;
+    ordinfo.strategyId = requestRef.StrategyID;
     ordinfo.qtyType = iOrderType;
 
     orders_.localMutex().lock();

@@ -31,6 +31,7 @@ int main() {
   order.qtyType = 3;  // OPEN_ORDER
   order.frontId = 11;
   order.sessionId = 22;
+  order.strategyId = 14526;
   order.Price = 785.7;
   order.Qty = 1;
 
@@ -48,6 +49,7 @@ int main() {
   const char* required[] = {
       "\"type\":\"order\"",
       "\"order_id\":\"2000000\"",
+      "\"strategy_id\":14526",
       "\"order_ref\":\"000000000001\"",
       "\"exchange_order_id\":\"123456\"",
       "\"front_id\":11",
