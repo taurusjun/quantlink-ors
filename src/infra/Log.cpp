@@ -80,6 +80,47 @@ bool sensitive(const std::string& key) {
          name.find("secret") != std::string::npos;
 }
 
+std::string eventType(std::string_view event) {
+  const auto starts = [event](std::string_view prefix) {
+    return event.rfind(prefix, 0) == 0;
+  };
+  if (starts("ors.order.") || starts("simvenue.order.") ||
+      starts("fasttrade.order.") || starts("order.") ||
+      event.find("OnRtnOrder") != std::string_view::npos ||
+      event.find("OnRspOrder") != std::string_view::npos ||
+      event.find("OnErrRtnOrder") != std::string_view::npos ||
+      event.find("OnRtnTrade") != std::string_view::npos ||
+      event.find("OrderService") != std::string_view::npos) {
+    return "order";
+  }
+  if (starts("ors.md.") || starts("market.") ||
+      event.find("MarketData") != std::string_view::npos ||
+      event.find("DepthMarket") != std::string_view::npos ||
+      event.find("SubMarket") != std::string_view::npos) {
+    return "market_data";
+  }
+  if (starts("ors.rms.") || event.find("Rms") != std::string_view::npos) {
+    return "rms";
+  }
+  if (starts("ors.transport.") ||
+      event.find("Aeron") != std::string_view::npos) {
+    return "transport";
+  }
+  if (event.find("Login") != std::string_view::npos ||
+      event.find("Auth") != std::string_view::npos ||
+      event.find("Front") != std::string_view::npos ||
+      event.find("Session") != std::string_view::npos) {
+    return "session";
+  }
+  if (event.find("Query") != std::string_view::npos ||
+      event.find("Qry") != std::string_view::npos ||
+      event.find("Account") != std::string_view::npos ||
+      event.find("Position") != std::string_view::npos) {
+    return "account";
+  }
+  return "system";
+}
+
 std::string levelName(spdlog::level::level_enum level) {
   switch (level) {
     case spdlog::level::trace:
@@ -169,16 +210,21 @@ void logEvent(spdlog::logger& logger, spdlog::level::level_enum level,
       context.instance.empty() ? "unknown" : context.instance;
 
   bool hasMessage = false;
+  bool hasType = false;
   for (const auto& field : fields) {
     hasMessage = hasMessage || field.key == "message";
+    hasType = hasType || field.key == "type";
   }
 
   json << "{\"schema_version\":\"1\",\"ts\":\"" << nowIso8601()
        << "\",\"level\":\"" << levelName(level) << "\",\"service\":\""
        << jsonEscape(service) << "\",\"instance\":\"" << jsonEscape(instance)
        << "\",\"host\":\"" << jsonEscape(host) << "\",\"pid\":" << pid
-       << ",\"thread\":\"" << jsonEscape(currentThreadName())
-       << "\",\"event\":\"" << jsonEscape(event) << "\"";
+       << ",\"thread\":\"" << jsonEscape(currentThreadName()) << "\"";
+  if (!hasType) {
+    json << ",\"type\":\"" << eventType(event) << "\"";
+  }
+  json << ",\"event\":\"" << jsonEscape(event) << "\"";
   if (!hasMessage) {
     json << ",\"message\":\"" << jsonEscape(event) << "\"";
   }

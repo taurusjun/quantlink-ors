@@ -132,24 +132,23 @@ void CMdSpi::SubscribeMarketData()
         char *temp = (char *)iter->first.c_str();
         iResult = m_pUserApi->SubscribeMarketData(&temp, 1);
     }
-    tempTimeStamp = ::ors::nowNanos();
-    ORS_LOG(INFO) << "|" << tempTimeStamp << "|"
-               << "SubscribeMarketData " << ((iResult == 0) ? "done " : "not done ") << endl;
+    ::ors::log::info("ors.md.subscribe",
+              {{"result", iResult},
+               {"message", iResult == 0 ? "market data subscription requested"
+                                         : "market data subscription failed"}});
 }
 
 void CMdSpi::OnRspSubMarketData(CThostFtdcSpecificInstrumentField *pSpecificInstrument, CThostFtdcRspInfoField *pRspInfo, int nRequestID, bool bIsLast)
 {
-    tempTimeStamp = ::ors::nowNanos();
-    ORS_LOG(INFO) << "|" << tempTimeStamp << "|" << __FUNCTION__ << endl;
     if (pSpecificInstrument == NULL)
     {
-        tempTimeStamp = ::ors::nowNanos();
-        ORS_LOG(INFO) << "|" << tempTimeStamp << "|"
-                   << "Error in subscription " << std::endl;
+        ::ors::log::warn("ors.md.subscribe_response",
+                  {{"message", "market data subscription response missing instrument"}});
         return;
     }
-    ORS_LOG(INFO) << "|" << tempTimeStamp << "|"
-               << "Instrument " << pSpecificInstrument->InstrumentID << std::endl;
+    ::ors::log::info("ors.md.subscribe_response",
+              {{"instrument", pSpecificInstrument->InstrumentID},
+               {"message", "market data subscription response"}});
     IsErrorRspInfo(pRspInfo);
 }
 
@@ -171,7 +170,11 @@ time_t parseTime(char szTimeInfo[], int iMillisecs)
 void CMdSpi::OnRtnDepthMarketData(CThostFtdcDepthMarketDataField *pDepthMarketData)
 {
     // std::cout << __FUNCTION__ << endl;
-    ORS_LOG(INFO) << "| RECVMD: " << pDepthMarketData->InstrumentID << "|" << pDepthMarketData->UpdateTime << endl;
+    ::ors::log::info("ors.md.tick",
+              {{"instrument", pDepthMarketData->InstrumentID},
+               {"update_time", pDepthMarketData->UpdateTime},
+               {"update_millisec", pDepthMarketData->UpdateMillisec},
+               {"message", "market data tick"}});
     strcpy(marketUpdate_.m_symbol, pDepthMarketData->InstrumentID);
     marketUpdate_.m_lastTradedPrice = pDepthMarketData->LastPrice;
     marketUpdate_.m_totalTradedQuantity = pDepthMarketData->Volume;

@@ -30,6 +30,7 @@ int main() {
   std::remove(path.c_str());
 
   if (line.find("\"schema_version\":\"1\"") == std::string::npos ||
+      line.find("\"type\":\"order\"") == std::string::npos ||
       line.find("\"service\":\"ors\"") == std::string::npos ||
       line.find("\"instance\":\"ors-test\"") == std::string::npos ||
       line.find("\"host\":\"test-host\"") == std::string::npos ||

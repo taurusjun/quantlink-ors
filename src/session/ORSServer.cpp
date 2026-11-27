@@ -530,15 +530,17 @@ void ORSServer::RejectOrder(::ors::infra::RequestMsg *req, const char *reason)
 void ORSServer::OnRtnInstrumentStatus(CThostFtdcInstrumentStatusField *pInstrumentStatus)
 {
     MasterData data;
-    tempTimeStamp = ::ors::nowNanos();
-    ORS_LOG(INFO) << "--->>> " << tempTimeStamp << "|" << __FUNCTION__ << "InstrumentID : " << pInstrumentStatus->InstrumentID << " ExchangeID : " << pInstrumentStatus->ExchangeID << " InstrumentStatus : " << pInstrumentStatus->InstrumentStatus << std::endl;
     if (pInstrumentStatus == NULL)
     {
-        tempTimeStamp = ::ors::nowNanos();
-        ORS_LOG(INFO) << "--->>> " << tempTimeStamp << "|"
-                   << "First param as NULL OnRspQryInstrument" << std::endl;
+        log::warn("ors.instrument.status",
+                  {{"message", "instrument status update without instrument"}});
         return;
     }
+    log::info("ors.instrument.status",
+              {{"instrument", pInstrumentStatus->InstrumentID},
+               {"exchange_id", pInstrumentStatus->ExchangeID},
+               {"instrument_status", pInstrumentStatus->InstrumentStatus},
+               {"message", "instrument status update"}});
     if (m_symbolMap.find(std::string(pInstrumentStatus->InstrumentID)) == m_symbolMap.end())
     {
         strcpy(data.ScripCode, pInstrumentStatus->InstrumentID);
@@ -563,9 +565,13 @@ void ORSServer::OnRtnInstrumentStatus(CThostFtdcInstrumentStatusField *pInstrume
         data.IsTrading = true;
         data.NetPositon = 0;
         // strcpy(ppInstrumentStatusID[iInstrumentID++], pInstrumentStatus->InstrumentID);
-        
-            tempTimeStamp = ::ors::nowNanos();
-            ORS_LOG(INFO) << "--->>> " << tempTimeStamp << "|" << data.ScripCode << "|" << data.RoundLot << "|" << data.DecimalLocator << "|" << data.ExpiryDate << "|" << data.ExchangeID << "|" << data.PriceTick << "|" << data.IsTrading << std::endl;
+
+        log::info("ors.instrument.definition",
+                  {{"instrument", data.ScripCode},
+                   {"round_lot_for_value_calc", static_cast<std::uint64_t>(data.RoundLot)},
+                   {"price_factor", data.Factor},
+                   {"exchange_id", data.ExchangeID},
+                   {"message", "instrument definition loaded"}});
         m_symbolMap[std::string(pInstrumentStatus->InstrumentID)] = data;
     }
     /*
@@ -584,8 +590,8 @@ void ORSServer::OnRtnInstrumentStatus(CThostFtdcInstrumentStatusField *pInstrume
 
 void ORSServer::ReqQryInstrument(char *szInstrumentID)
 {
-    tempTimeStamp = ::ors::nowNanos();
-    ORS_LOG(INFO) << "--->>> " << tempTimeStamp << "|" << __FUNCTION__ << std::endl;
+    log::info("ors.instrument.query",
+              {{"message", "instrument query requested"}});
     CThostFtdcQryInstrumentField req;
     memset(&req, 0, sizeof(req));
     if (szInstrumentID == NULL)
@@ -598,13 +604,14 @@ void ORSServer::ReqQryInstrument(char *szInstrumentID)
     }
     int iResult = m_pUserTradeApi->ReqQryInstrument(&req, ++m_iRequestID);
     tempTimeStamp = ::ors::nowNanos();
-    if (!iResult)
-        ORS_LOG(INFO) << "--->>> " << tempTimeStamp << "|"
-                   << "Instrument info query successful" << std::endl;
-    else
-    {
-        ORS_LOG(ERROR) << "--->>> " << tempTimeStamp << "|"
-                   << "Instrument info query failed" << std::endl;
+    if (!iResult) {
+        log::info("ors.instrument.query",
+                  {{"result", iResult},
+                   {"message", "instrument query accepted"}});
+    } else {
+        log::error("ors.instrument.query",
+                   {{"result", iResult},
+                    {"message", "instrument query rejected"}});
         return;
     }
 }
@@ -616,21 +623,20 @@ void ORSServer::ReqQryPosition()
 
 void ORSServer::OnRspQryInstrument(CThostFtdcInstrumentField *pInstrument, CThostFtdcRspInfoField *pRspInfo, int nRequestID, bool bIsLast)
 {
-    tempTimeStamp = ::ors::nowNanos();
-    ORS_LOG(INFO) << "--->>> " << tempTimeStamp << "|" << __FUNCTION__ << std::endl;
+    log::info("ors.instrument.query_response",
+              {{"message", "instrument query response"}});
     MasterData data;
     if (pInstrument == NULL)
     {
-        tempTimeStamp = ::ors::nowNanos();
-        ORS_LOG(INFO) << "--->>> " << tempTimeStamp << "|"
-                   << "First param as NULL OnRspQryInstrument" << std::endl;
+        log::warn("ors.instrument.query_response",
+                  {{"message", "instrument query response without instrument"}});
         return;
     }
     if (!IsErrorRspInfo(pRspInfo))
     {
-        tempTimeStamp = ::ors::nowNanos();
-        ORS_LOG(INFO) << "--->>> " << tempTimeStamp << "|"
-                   << "Instrument ID: " << pInstrument->InstrumentID << std::endl;
+        log::info("ors.instrument.query_response",
+                  {{"instrument", pInstrument->InstrumentID},
+                   {"message", "instrument query response"}});
         if (pInstrument->ProductClass == '1' && m_symbolMap.find(std::string(pInstrument->InstrumentID)) == m_symbolMap.end())
         {
             strcpy(data.ScripCode, pInstrument->InstrumentID);
@@ -654,16 +660,19 @@ void ORSServer::OnRspQryInstrument(CThostFtdcInstrumentField *pInstrument, CThos
             data.NetPositon = 0;
             // strcpy(ppInstrumentID[iInstrumentID++], pInstrument->InstrumentID);
             
-                tempTimeStamp = ::ors::nowNanos();
-                ORS_LOG(INFO) << "--->>> " << tempTimeStamp << "|" << data.ScripCode << "|" << data.RoundLot << "|" << data.DecimalLocator << "|" << data.ExpiryDate << "|" << data.ExchangeID << "|" << data.PriceTick << "|" << data.IsTrading << std::endl;
+                log::info("ors.instrument.definition",
+                          {{"instrument", data.ScripCode},
+                           {"round_lot_for_value_calc", static_cast<std::uint64_t>(data.RoundLot)},
+                           {"price_factor", data.Factor},
+                           {"exchange_id", data.ExchangeID},
+                           {"message", "instrument definition loaded"}});
             m_symbolMap[std::string(pInstrument->InstrumentID)] = data;
         }
     }
     else
     {
-        tempTimeStamp = ::ors::nowNanos();
-        ORS_LOG(INFO) << "--->>> " << tempTimeStamp << "|"
-                   << "OnRspQryInstrument error on callback" << std::endl;
+        log::error("ors.instrument.query_response",
+                   {{"message", "instrument query response error"}});
     }
     if (bIsLast)
     {
