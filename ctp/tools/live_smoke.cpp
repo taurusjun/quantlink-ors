@@ -87,10 +87,11 @@ std::uint64_t nowNanos() {
 }  // namespace
 
 int main(int argc, char** argv) {
-  if (argc != 2) {
-    std::cerr << "usage: live_smoke CONFIG\n";
+  if (argc != 2 && argc != 3) {
+    std::cerr << "usage: live_smoke CONFIG [--account-only]\n";
     return 2;
   }
+  const bool accountOnly = argc == 3 && std::string(argv[2]) == "--account-only";
 
   try {
     const ::ors::OrsConfig cfg = ::ors::OrsConfig::load(argv[1]);
@@ -162,6 +163,40 @@ int main(int argc, char** argv) {
       std::this_thread::sleep_for(std::chrono::milliseconds(20));
     }
     std::cout << "lastPrice=" << lastPrice << '\n';
+
+    if (accountOnly) {
+      AccountQuery accountQuery;
+      accountQuery.wrapAndApplyHeader(buffer, 0, sizeof(buffer))
+          .requestId(2)
+          .putAccountId(cfg.accountId)
+          .timestamp(nowNanos());
+      send(*client.request, buffer,
+           accountQuery.encodedLength() + MessageHeader::encodedLength());
+
+      const auto accountDeadline = Clock::now() + std::chrono::seconds(10);
+      while (Clock::now() < accountDeadline) {
+        bool done = false;
+        std::uint32_t accountError = 0;
+        poll(*client.account, [&](const char* data, std::size_t len) {
+          if (templateId(data, len) != AccountSnapshot::sbeTemplateId()) return;
+          MessageHeader header;
+          header.wrap(const_cast<char*>(data), 0, 0, len);
+          AccountSnapshot snapshot;
+          snapshot.wrapForDecode(const_cast<char*>(data),
+                                 MessageHeader::encodedLength(),
+                                 header.blockLength(), header.version(), len);
+          std::cout << "account response requestId=" << snapshot.requestId()
+                    << " error=" << snapshot.errorCode()
+                    << " available=" << snapshot.available() << '\n';
+          accountError = snapshot.errorCode();
+          done = true;
+        });
+        if (done) return accountError == 0 ? 0 : 1;
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+      }
+      std::cerr << "account response timeout\n";
+      return 1;
+    }
 
     OrsRequest order;
     order.wrapAndApplyHeader(buffer, 0, sizeof(buffer))
@@ -254,35 +289,6 @@ int main(int argc, char** argv) {
       return 1;
     }
 
-    AccountQuery accountQuery;
-    accountQuery.wrapAndApplyHeader(buffer, 0, sizeof(buffer))
-        .requestId(2)
-        .putAccountId(cfg.accountId)
-        .timestamp(nowNanos());
-    send(*client.request, buffer,
-         accountQuery.encodedLength() + MessageHeader::encodedLength());
-
-    const auto accountDeadline = Clock::now() + std::chrono::seconds(10);
-    while (Clock::now() < accountDeadline) {
-      bool done = false;
-      poll(*client.account, [&](const char* data, std::size_t len) {
-        if (templateId(data, len) != AccountSnapshot::sbeTemplateId()) return;
-        MessageHeader header;
-        header.wrap(const_cast<char*>(data), 0, 0, len);
-        AccountSnapshot snapshot;
-        snapshot.wrapForDecode(const_cast<char*>(data),
-                               MessageHeader::encodedLength(),
-                               header.blockLength(), header.version(), len);
-        std::cout << "account response requestId=" << snapshot.requestId()
-                  << " error=" << snapshot.errorCode()
-                  << " available=" << snapshot.available() << '\n';
-        done = true;
-      });
-      if (done) return 0;
-      std::this_thread::sleep_for(std::chrono::milliseconds(20));
-    }
-    std::cerr << "account response timeout\n";
-    return 1;
   } catch (const std::exception& error) {
     std::cerr << "live smoke failed: " << error.what() << '\n';
     return 1;

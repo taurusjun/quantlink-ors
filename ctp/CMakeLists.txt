@@ -58,7 +58,8 @@ add_library(ors_core STATIC
     vendor/rms/tinyxml2.cpp
     vendor/rms/rmschecks.cpp)
 target_include_directories(ors_core PUBLIC ${ORS_INCLUDE_DIRS})
-target_link_libraries(ors_core PUBLIC ors_base CTP::trader CTP::md Threads::Threads)
+target_link_directories(ors_core PUBLIC "${CTP_HOME}/lib")
+target_link_libraries(ors_core PUBLIC ors_base thosttraderapi_se thostmduserapi_se Threads::Threads)
 target_compile_features(ors_core PUBLIC cxx_std_20)
 target_compile_definitions(ors_core PUBLIC _USE_CTP_=1)
 
@@ -80,6 +81,7 @@ if(AERON_HOME AND AERON_RUNTIME_HOME)
   add_executable(ors_ctp main.cpp)
   target_link_libraries(ors_ctp PRIVATE ors_aeron_client ors_transport ors_core)
   target_compile_features(ors_ctp PRIVATE cxx_std_20)
+  set_target_properties(ors_ctp PROPERTIES SKIP_BUILD_RPATH TRUE)
 
   add_executable(ors_live_smoke tools/live_smoke.cpp)
   target_link_libraries(ors_live_smoke PRIVATE ors_codec "${AERON_LIB}")
