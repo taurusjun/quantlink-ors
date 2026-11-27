@@ -21,7 +21,7 @@ void StartupQuery::requestPosition() {
   std::strcpy(request.BrokerID, config_.brokerId.c_str());
   std::strcpy(request.InvestorID, config_.investorId.c_str());
   const int result = positionRequest_(request);
-  if (result <= 0) {
+  if (result != 0) {
     log::error("ors.startup.position_query_failed",
                {{"type", "system"},
                 {"account_id", config_.accountId},
@@ -80,7 +80,7 @@ void StartupQuery::requestOrders() {
   std::strcpy(request.BrokerID, config_.brokerId.c_str());
   std::strcpy(request.InvestorID, config_.investorId.c_str());
   const int result = orderRequest_(request);
-  if (result <= 0) {
+  if (result != 0) {
     log::error("ors.startup.order_query_failed",
                {{"type", "system"},
                 {"account_id", config_.accountId},
