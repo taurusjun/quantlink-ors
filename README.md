@@ -13,6 +13,7 @@ L0 / ORS
 
 - [v3：当前 L0 ORS 设计](docs/v3/l0-ors-design.md)
 - [v3：文档索引](docs/v3/README.md)
+- [实现布局](docs/ctp.md)
 - [v2：历史改动与验收（ARCHIVED）](docs/v2/README.md)
 - [v1：初版设计（ARCHIVED）](docs/v1/README.md)
 
@@ -30,10 +31,10 @@ CONTRACT_HOME=/path/to/quantlink-venue-contract \
 
 ```bash
 cmake -S . -B build \
-  -DCTP_HOME=/root/quantlink-trading/ors/third_party/ctp/linux \
-  -DAERON_HOME=/opt/quantlink-fin/aeron-src \
-  -DAERON_RUNTIME_HOME=/opt/quantlink-fin/aeron-runtime \
-  -DSPDLOG_INCLUDE_DIR=/root/quantlink-trading/tbadmin/inc \
+  -DCTP_HOME=/root/quantlink-deploy/third_party/ctp/linux \
+  -DAERON_HOME=/root/quantlink-deploy/.build/aeron-src \
+  -DAERON_RUNTIME_HOME=/root/quantlink-deploy/.build/aeron-runtime \
+  -DSPDLOG_INCLUDE_DIR=/root/quantlink-deploy/third_party/spdlog/include \
   -DCONTRACT_GENERATED_DIR="$PWD/build/generated/contract"
 cmake --build build -j
 ctest --test-dir build --output-on-failure
@@ -104,7 +105,10 @@ L0 contract 由 quantlink-venue-contract 定义
 子项目：
 
 ```text
-ctp/       CTP 连接、订单、回报、行情、账户/持仓查询
+src/        CTP 连接、订单、回报、行情、账户/持仓查询
+include/    跨 target 公共头
+third_party/第三方依赖（CTP、RMS、inih）
+tests/      单元/集成测试
 ```
 
 构建与测试目标：

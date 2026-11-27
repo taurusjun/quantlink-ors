@@ -5,6 +5,12 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 enable_testing()
 
+option(ORS_ENABLE_SANITIZERS "Build ORS tests with ASan/UBSan" OFF)
+if(ORS_ENABLE_SANITIZERS)
+  add_compile_options(-fsanitize=address,undefined -fno-omit-frame-pointer)
+  add_link_options(-fsanitize=address,undefined)
+endif()
+
 find_package(CTP REQUIRED)
 find_package(Threads REQUIRED)
 
