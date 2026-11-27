@@ -235,7 +235,8 @@ int main(int argc, char** argv) {
           .timestamp(nowNanos())
           .putAccountId(cfg.accountId)
           .transactionType(transaction)
-          .exchangeType(57);
+          .exchangeType(57)
+          .strategyId(14526);
       return send(*client.request, buffer,
                   request.encodedLength() + MessageHeader::encodedLength());
     };
