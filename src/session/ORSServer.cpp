@@ -422,7 +422,7 @@ void ORSServer::SendNewOrder(RequestMsg *request)
     ORS_LOG(INFO) << "NewOrder ------> " << tempTimeStamp << "|" << __FUNCTION__ << " start OrderRef" << request->OrderID << std::endl;
     int iResult;
     CThostFtdcInputOrderField req;
-    OrderInfo ordinfo;
+    ::ors::OrderInfo ordinfo;
 
     uint64_t rmstime, ordercrosscheck, apisend;
     uint64_t curtime = ::ors::nowNanos();
@@ -624,13 +624,13 @@ void ORSServer::SendNewOrder(RequestMsg *request)
     ordinfo.sessionId = SESSION_ID;
     ordinfo.qtyType = iOrderType;
 
-    m_ordLocalMapLock.lock();
-    m_ordLocalMap[request->OrderID] = ordinfo;
-    m_ordLocalMapLock.unlock();
+    orders_.localMutex().lock();
+    orders_.local()[request->OrderID] = ordinfo;
+    orders_.localMutex().unlock();
 
-    m_ordExchMapLock.lock();
-    m_ordExchMap[std::string(req.OrderRef)] = request->OrderID;
-    m_ordExchMapLock.unlock();
+    orders_.exchangeMutex().lock();
+    orders_.exchange()[std::string(req.OrderRef)] = request->OrderID;
+    orders_.exchangeMutex().unlock();
 
     // ::ors::metrics().record( shmread, ((int64_t)curtime - (int64_t)request->TimeStamp)) ;
     ::ors::metrics().record(orsLatency,
@@ -658,22 +658,22 @@ void ORSServer::SendCancelOrder(RequestMsg *request)
     tempTimeStamp = ::ors::nowNanos();
     ORS_LOG(INFO) << "------> " << tempTimeStamp << "|" << __FUNCTION__ << " start OrderRef" << request->OrderID << std::endl;
     CThostFtdcInputOrderActionField req;
-    OrderInfo ordinfo;
+    ::ors::OrderInfo ordinfo;
     int iResult;
     uint64_t rmstime, apisend;
     uint64_t curtime = ::ors::nowNanos();
 
     memset(&req, 0, sizeof(req));
 
-    m_ordLocalMapLock.lock();
-    if (m_ordLocalMap.find(request->OrderID) == m_ordLocalMap.end())
+    orders_.localMutex().lock();
+    if (orders_.local().find(request->OrderID) == orders_.local().end())
     {
-        m_ordLocalMapLock.unlock();
+        orders_.localMutex().unlock();
         RejectOrder(request, "New not found for Cancel request");
         return;
     }
-    ordinfo = m_ordLocalMap[request->OrderID];
-    m_ordLocalMapLock.unlock();
+    ordinfo = orders_.local()[request->OrderID];
+    orders_.localMutex().unlock();
 
     if (!rms.executeCancelOrderChecks(*request))
     {
@@ -724,9 +724,9 @@ void ORSServer::SendCancelOrder(RequestMsg *request)
     ordinfo.requestType = CANCELORDER; // request->Request_Type;
     ordinfo.sendTime = endtime;
 
-    m_ordLocalMapLock.lock();
-    m_ordLocalMap[request->OrderID] = ordinfo;
-    m_ordLocalMapLock.unlock();
+    orders_.localMutex().lock();
+    orders_.local()[request->OrderID] = ordinfo;
+    orders_.localMutex().unlock();
 
     tempTimeStamp = ::ors::nowNanos();
     ORS_LOG(INFO) << "--->>> " << tempTimeStamp << "|"
@@ -741,7 +741,7 @@ void ORSServer::SendCancelOrder(RequestMsg *request)
     ::ors::metrics().record(rmscheck, ((int64_t)rmstime - (int64_t)curtime));
 }
 
-void ORSServer::logOrderInfoResponse(const char *s, OrderInfo &ordinfo,
+void ORSServer::logOrderInfoResponse(const char *s, ::ors::OrderInfo &ordinfo,
                                      ResponseMsg *resp)
 {
     ORS_LOG(INFO) << "|" << tempTimeStamp << "|" << s << ordinfo.localID << " | " << ordinfo.exchID << " | " << ordinfo.OrderSysID << " | " << ordinfo.ScripCode << " | " << ordinfo.Price << " | " << ordinfo.Qty << " | " << (resp->TimeStamp - ordinfo.sendTime) << std::endl;
@@ -756,11 +756,11 @@ void ORSServer::PushUpdate(ResponseMsg *resp)
                              ::ors::nowNanos() - resp->TimeStamp);
     // m_responseInterface->unlock();
 
-    OrderInfo ordinfo;
-    // if(m_ordLocalMap.find(resp->OrderID) != m_ordLocalMap.end())
-    m_ordLocalMapLock.lock();
-    ordinfo = m_ordLocalMap[resp->OrderID];
-    m_ordLocalMapLock.unlock();
+    ::ors::OrderInfo ordinfo;
+    // if(orders_.local().find(resp->OrderID) != orders_.local().end())
+    orders_.localMutex().lock();
+    ordinfo = orders_.local()[resp->OrderID];
+    orders_.localMutex().unlock();
     if (ordinfo.sendTime && resp->Response_Type != TRADE_CONFIRM)
     {
         switch (resp->Response_Type)
@@ -831,7 +831,7 @@ void ORSServer::PushUpdate(ResponseMsg *resp)
     updatePosition(ordinfo, resp);
 }
 
-void ORSServer::updatePosition(OrderInfo &ordinfo, ResponseMsg *resp)
+void ORSServer::updatePosition(::ors::OrderInfo &ordinfo, ResponseMsg *resp)
 {
     ::ors::PositionAction action = ::ors::PositionAction::Open;
     if (ordinfo.qtyType == CLOSE_TODAY) {
@@ -1236,8 +1236,8 @@ void ORSServer::OnRspSettlementInfoConfirm(CThostFtdcSettlementInfoConfirmField 
 bool ORSServer::OrderCrossCheck(RequestMsg *request)
 {
     OrderAccountMapIter openorders;
-    m_ordLocalMapLock.lock();
-    for (openorders = m_ordLocalMap.begin(); openorders != m_ordLocalMap.end();
+    orders_.localMutex().lock();
+    for (openorders = orders_.local().begin(); openorders != orders_.local().end();
          openorders++)
     {
         if (request->Transaction_Type != openorders->second.Transaction_Type)
@@ -1254,13 +1254,13 @@ bool ORSServer::OrderCrossCheck(RequestMsg *request)
                     tempTimeStamp = ::ors::nowNanos();
                     ORS_LOG(INFO) << "|" << tempTimeStamp << "|"
                                << "Cross : " << openorders->first << " | " << request->OrderID << std::endl;
-                    m_ordLocalMapLock.unlock();
+                    orders_.localMutex().unlock();
                     return true;
                 }
             }
         }
     }
-    m_ordLocalMapLock.unlock();
+    orders_.localMutex().unlock();
     return false;
 }
 
@@ -1269,7 +1269,7 @@ bool ORSServer::OrderCrossCheck(RequestMsg *request)
  std::cout << __FUNCTION__ << std::endl;
  CSgitFtdcInputOrderActionField req;
 
- OrderInfo ordinfo;
+ ::ors::OrderInfo ordinfo;
  int iResult;
  uint64_t rmstime, apisend;
  uint64_t curtime = ::ors::nowNanos() ;
@@ -1282,12 +1282,12 @@ bool ORSServer::OrderCrossCheck(RequestMsg *request)
  rmstime = ::ors::nowNanos();
  CSgitFtdcInputOrderActionField reqOrderAction = { 0 };
 
- if(m_ordLocalMap.find(request->OrderID) == m_ordLocalMap.end())
+ if(orders_.local().find(request->OrderID) == orders_.local().end())
  {
  RejectOrder( request, "New not found for Cancel request\n") ;
  return;
  }
- ordinfo = m_ordLocalMap[request->OrderID];
+ ordinfo = orders_.local()[request->OrderID];
  sprintf(reqOrderAction.ExchangeID,"%s","S");
  sprintf(reqOrderAction.InstrumentID,"%s",request->Contract_Description.Symbol);
  sprintf(reqOrderAction.UserID,"%s", m_BROKER_ID.c_str());
@@ -1315,8 +1315,8 @@ bool ORSServer::OrderCrossCheck(RequestMsg *request)
  ordinfo.requestType = request->Request_Type;
  ordinfo.sendTime = endtime;
  //ordinfo.orderSent = 1;
- m_ordLocalMap[request->OrderID] = ordinfo;
- m_ordExchMap[std::string(req.OrderRef)] = ordinfo;
+ orders_.local()[request->OrderID] = ordinfo;
+ orders_.exchange()[std::string(req.OrderRef)] = ordinfo;
 
  std::cout << "Cancel order sent | " << ordinfo.localID << " | " << ordinfo.exchID << '|' << request->Price << '|' << request->Quantity << std::endl ;
 
@@ -1327,31 +1327,31 @@ bool ORSServer::OrderCrossCheck(RequestMsg *request)
  }
  */
 
-bool ORSServer::GetOrderInfo(const char *orderref, OrderInfo &orderinfo)
+bool ORSServer::GetOrderInfo(const char *orderref, ::ors::OrderInfo &orderinfo)
 {
     // TODO : temporary solution.. can do better
     uint32_t oid;
-    m_ordExchMapLock.lock();
-    auto localID = m_ordExchMap.find(std::string(orderref));
-    if (localID == m_ordExchMap.end())
+    orders_.exchangeMutex().lock();
+    auto localID = orders_.exchange().find(std::string(orderref));
+    if (localID == orders_.exchange().end())
     {
         ORS_LOG(FATAL) << "OrderRef: " << orderref << " not found in map\n";
-        m_ordExchMapLock.unlock();
+        orders_.exchangeMutex().unlock();
         return false;
     }
     else
     {
         oid = localID->second;
     }
-    m_ordExchMapLock.unlock();
+    orders_.exchangeMutex().unlock();
 
-    m_ordLocalMapLock.lock();
+    orders_.localMutex().lock();
 
-    auto oinfo_it = m_ordLocalMap.find(oid);
-    if (oinfo_it == m_ordLocalMap.end())
+    auto oinfo_it = orders_.local().find(oid);
+    if (oinfo_it == orders_.local().end())
     {
         ORS_LOG(FATAL) << "OrderID: " << oid << " not found in map\n";
-        m_ordLocalMapLock.unlock();
+        orders_.localMutex().unlock();
         return false;
     }
     else
@@ -1359,29 +1359,29 @@ bool ORSServer::GetOrderInfo(const char *orderref, OrderInfo &orderinfo)
         orderinfo = oinfo_it->second;
     }
 
-    m_ordLocalMapLock.unlock();
+    orders_.localMutex().unlock();
     return true;
 }
 
 void ORSServer::RemoveFromMap(const char *exchid, int32_t localid)
 {
-    m_ordLocalMapLock.lock();
-    OrderAccountMapIter iter = m_ordLocalMap.find(localid);
-    if (iter != m_ordLocalMap.end())
+    orders_.localMutex().lock();
+    OrderAccountMapIter iter = orders_.local().find(localid);
+    if (iter != orders_.local().end())
     {
-        m_ordLocalMap.erase(iter);
+        orders_.local().erase(iter);
     }
-    m_ordLocalMapLock.unlock();
+    orders_.localMutex().unlock();
 
-    m_ordExchMapLock.lock();
-    OrderAccountMapIter2 iter2 = m_ordExchMap.find(std::string(exchid));
-    if (iter2 != m_ordExchMap.end())
+    orders_.exchangeMutex().lock();
+    OrderAccountMapIter2 iter2 = orders_.exchange().find(std::string(exchid));
+    if (iter2 != orders_.exchange().end())
     {
         tempTimeStamp = ::ors::nowNanos();
         //   ORS_LOG(INFO) << "--->>> "<< tempTimeStamp << "|" << "Erased order from map " << localid << " | " << exchid << std::endl;
-        m_ordExchMap.erase(iter2);
+        orders_.exchange().erase(iter2);
     }
-    m_ordExchMapLock.unlock();
+    orders_.exchangeMutex().unlock();
 }
 
 
@@ -1392,7 +1392,7 @@ void ORSServer::OnRspOrderAction(CThostFtdcOrderActionField *pOrderAction, CThos
         return;
     }
 
-    OrderInfo order;
+    ::ors::OrderInfo order;
     if (!GetOrderInfo(pOrderAction->OrderRef, order)) {
         return;
     }
@@ -1420,7 +1420,7 @@ void ORSServer::OnRspOrderInsert(CThostFtdcInputOrderField *pInputOrder, CThostF
     // if(pRspInfo->ErrorID != 0)
     {
         ResponseMsg response;
-        OrderInfo ordinfo;
+        ::ors::OrderInfo ordinfo;
         if (!GetOrderInfo(pInputOrder->OrderRef, ordinfo))
             return;
 
@@ -1465,9 +1465,9 @@ void ORSServer::OnRspOrderInsert(CThostFtdcInputOrderField *pInputOrder, CThostF
         }
         else
         {
-            m_ordLocalMapLock.lock();
-            m_ordLocalMap[response.OrderID] = ordinfo;
-            m_ordLocalMapLock.unlock();
+            orders_.localMutex().lock();
+            orders_.local()[response.OrderID] = ordinfo;
+            orders_.localMutex().unlock();
         }
     }
     tempTimeStamp = ::ors::nowNanos();
@@ -1483,7 +1483,7 @@ void ORSServer::OnErrRtnOrderAction(CThostFtdcOrderActionField *pOrderAction, CT
     // if(pRspInfo->ErrorID != 0)
     {
         ResponseMsg response;
-        OrderInfo ordinfo;
+        ::ors::OrderInfo ordinfo;
         if (!GetOrderInfo(pOrderAction->OrderRef, ordinfo))
             return;
 
@@ -1527,9 +1527,9 @@ void ORSServer::OnErrRtnOrderAction(CThostFtdcOrderActionField *pOrderAction, CT
         }
         else
         {
-            m_ordLocalMapLock.lock();
-            m_ordLocalMap[response.OrderID] = ordinfo;
-            m_ordLocalMapLock.unlock();
+            orders_.localMutex().lock();
+            orders_.local()[response.OrderID] = ordinfo;
+            orders_.localMutex().unlock();
         }
     }
     tempTimeStamp = ::ors::nowNanos();
@@ -1546,7 +1546,7 @@ void ORSServer::OnErrRtnOrderInsert(CThostFtdcInputOrderField *pInputOrder, CTho
     // if(pRspInfo->ErrorID != 0)
     {
         ResponseMsg response;
-        OrderInfo ordinfo;
+        ::ors::OrderInfo ordinfo;
 
         if (!GetOrderInfo(pInputOrder->OrderRef, ordinfo))
             return;
@@ -1589,9 +1589,9 @@ void ORSServer::OnErrRtnOrderInsert(CThostFtdcInputOrderField *pInputOrder, CTho
         }
         else
         {
-            m_ordLocalMapLock.lock();
-            m_ordLocalMap[response.OrderID] = ordinfo;
-            m_ordLocalMapLock.unlock();
+            orders_.localMutex().lock();
+            orders_.local()[response.OrderID] = ordinfo;
+            orders_.localMutex().unlock();
         }
     }
     tempTimeStamp = ::ors::nowNanos();
@@ -1618,7 +1618,7 @@ void ORSServer::OnRtnOrder(CThostFtdcOrderField *pOrder)
 {
     tempTimeStamp = ::ors::nowNanos();
     ORS_LOG(INFO) << "------> " << tempTimeStamp << "|" << __FUNCTION__ << " start OrderRef" << pOrder->OrderRef << std::endl;
-    OrderInfo ordinfo;
+    ::ors::OrderInfo ordinfo;
     ResponseMsg response;
     bool bRemoveOrder = false;
 
@@ -1821,9 +1821,9 @@ void ORSServer::OnRtnOrder(CThostFtdcOrderField *pOrder)
     }
     else
     {
-        m_ordLocalMapLock.lock();
-        m_ordLocalMap[response.OrderID] = ordinfo;
-        m_ordLocalMapLock.unlock();
+        orders_.localMutex().lock();
+        orders_.local()[response.OrderID] = ordinfo;
+        orders_.localMutex().unlock();
     }
     // UpdateRMS(res, ordinfo.ScripCode, ordinfo.ClientID, ordinfo.Transaction_Type);
     tempTimeStamp = ::ors::nowNanos();
@@ -1835,7 +1835,7 @@ void ORSServer::OnRtnTrade(CThostFtdcTradeField *pTrade)
 {
     tempTimeStamp = ::ors::nowNanos();
 //	ORS_LOG(INFO) << "------> "<< tempTimeStamp << "|" << __FUNCTION__ << " start OrderRef " << pTrade->OrderRef << std::endl;
-    OrderInfo ordinfo;
+    ::ors::OrderInfo ordinfo;
     ResponseMsg response;
 
     /*
@@ -1846,35 +1846,35 @@ void ORSServer::OnRtnTrade(CThostFtdcTradeField *pTrade)
      ordinfo.openQty = ordinfo.Qty;
 
      if (ordinfo.openQty > 0) {
-     m_ordLocalMapLock.lock();
+     orders_.localMutex().lock();
      } else {
      RemoveFromMap(ordinfo.exchID, ordinfo.localID);
      }
      */
-    // TODO: Didn't use GetOrderInfo directly because there was some unusal locking in this function
+    // TODO: Didn't use Get::ors::OrderInfo directly because there was some unusal locking in this function
     uint32_t oid;
-    m_ordExchMapLock.lock();
-    auto localID_it = m_ordExchMap.find(std::string(pTrade->OrderRef));
-    if (localID_it == m_ordExchMap.end())
+    orders_.exchangeMutex().lock();
+    auto localID_it = orders_.exchange().find(std::string(pTrade->OrderRef));
+    if (localID_it == orders_.exchange().end())
     {
         ORS_LOG(FATAL) << "OrderRef: " << pTrade->OrderRef << " not found in map\n";
-        m_ordExchMapLock.unlock();
+        orders_.exchangeMutex().unlock();
         return;
     }
     else
     {
         oid = localID_it->second;
     }
-    m_ordExchMapLock.unlock();
+    orders_.exchangeMutex().unlock();
 
-    m_ordLocalMapLock.lock();
-    ordinfo = m_ordLocalMap[oid];
-    m_ordLocalMapLock.unlock();
-    m_ordLocalMapLock.lock();
+    orders_.localMutex().lock();
+    ordinfo = orders_.local()[oid];
+    orders_.localMutex().unlock();
+    orders_.localMutex().lock();
     ordinfo.Qty = ordinfo.Qty - pTrade->Volume;
     ordinfo.openQty = ordinfo.Qty;
-    m_ordLocalMap[oid] = ordinfo;
-    m_ordLocalMapLock.unlock();
+    orders_.local()[oid] = ordinfo;
+    orders_.localMutex().unlock();
 
     response.Response_Type = TRADE_CONFIRM;
     response.OrderID = ordinfo.localID;
@@ -1900,8 +1900,8 @@ void ORSServer::OnRtnTrade(CThostFtdcTradeField *pTrade)
         tempTimeStamp = ::ors::nowNanos();
         ORS_LOG(INFO) << "--->>> " << tempTimeStamp << "|"
                    << "Partially traded" << std::endl;
-        // m_ordLocalMap[response.OrderID] = ordinfo;
-        // m_ordExchMap[std::string(ordinfo.exchID)] = ordinfo;
+        // orders_.local()[response.OrderID] = ordinfo;
+        // orders_.exchange()[std::string(ordinfo.exchID)] = ordinfo;
     }
     else
     {

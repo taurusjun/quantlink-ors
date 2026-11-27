@@ -23,6 +23,8 @@
 
 #include "config/OrsConfig.h"
 #include "domain/OrsTypes.h"
+#include "domain/OrderInfo.h"
+#include "execution/OrderStore.h"
 #include "domain/PositionTable.h"
 #include "execution/ClientRegistry.h"
 #include "query/AccountQueryState.h"
@@ -56,38 +58,6 @@ typedef struct _masterData
 typedef std::unordered_map<std::string, MasterData> SymbolMap;
 typedef std::unordered_map<std::string, MasterData>::iterator SymbolMapIter;
 
-typedef struct _orderInfo
-{
-    ::ors::infra::RequestType requestType;
-    bool orderSent;
-    unsigned long localID;
-    char exchID[31];
-    char OrderSysID[21];
-    char ClientID[11];
-    char ScripCode[31];
-    unsigned char Transaction_Type;
-    // just for RMS
-    double Price;
-    unsigned long Qty;
-    double oldPrice;
-    unsigned long oldQty;
-    unsigned long ModQtySent;
-    // to keep track if the order is completely traded or open
-    unsigned long openQty;
-    std::uint64_t sendTime;
-    int frontId;
-    int sessionId;
-    char exchange;
-    int qtyType; // is this open or close or closeyesterday
-} OrderInfo;
-
-// local order id, order info
-typedef std::map<unsigned long, OrderInfo> OrderAccountMap;
-typedef std::map<unsigned long, OrderInfo>::iterator OrderAccountMapIter;
-
-typedef std::map<std::string, std::uint32_t> OrderAccountMap2;
-typedef std::map<std::string, std::uint32_t>::iterator OrderAccountMapIter2;
-
 class ORSServer : public CThostFtdcTraderSpi
 {
 public:
@@ -107,15 +77,16 @@ public:
     void RmsError(::ors::infra::ResponseType, std::uint32_t, std::uint32_t);
     void RmsWarning(::ors::infra::ResponseType, std::uint32_t, std::uint32_t);
 
+    ::ors::OrderStore &orderStore() { return orders_; }
+    const ::ors::OrderStore &orderStore() const { return orders_; }
+
     ::ors::infra::RmsImpl &getRms()
     {
         return rms;
     }
 
     SymbolMap m_symbolMap;
-    OrderAccountMap m_ordLocalMap;
-    OrderAccountMap2 m_ordExchMap;
-    std::mutex m_ordExchMapLock;
+    ::ors::OrderStore orders_;
     std::atomic_bool m_connected{false};
     bool m_logReqResp;
     std::thread m_reqrespLogger;
@@ -132,7 +103,7 @@ public:
     std::string m_APPID{""};
     int iNextOrderRef;
 
-    void logOrderInfoResponse(const char *, OrderInfo &ordinfo,
+    void logOrderInfoResponse(const char *, ::ors::OrderInfo &ordinfo,
                               ::ors::infra::ResponseMsg *resp);
 
     struct TraderApiDeleter {
@@ -181,18 +152,17 @@ private:
     MDHandler& mdHandler_;
     ::ors::md::MarketUpdateNew& marketUpdate_;
     inline __attribute__((always_inline)) void RemoveFromMap(const char *exchid, std::int32_t localid);
-    inline __attribute__((always_inline)) bool GetOrderInfo(const char *orderref, OrderInfo &orderinfo);
+    inline __attribute__((always_inline)) bool GetOrderInfo(const char *orderref, ::ors::OrderInfo &orderinfo);
 
     void SetCombOffsetFlag(CThostFtdcInputOrderField &req,
                            ::ors::infra::RequestMsg *request,
                            char &flag, int &orderType);
-    std::mutex m_ordLocalMapLock;
     void registerStats();
     inline __attribute__((always_inline)) void SendNewOrder(::ors::infra::RequestMsg *);
     inline __attribute__((always_inline)) void SendModifyOrder(::ors::infra::RequestMsg *);
     inline __attribute__((always_inline)) void SendCancelOrder(::ors::infra::RequestMsg *);
     void DoLoggOff();
-    void updatePosition(OrderInfo &ordinfo, ::ors::infra::ResponseMsg *resp);
+    void updatePosition(::ors::OrderInfo &ordinfo, ::ors::infra::ResponseMsg *resp);
 
     void ReqUserLogin();
     void Authenticate(); // add by pqr 20230213

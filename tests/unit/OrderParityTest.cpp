@@ -39,7 +39,7 @@ int main() {
     return 1;
   }
 
-  OrderInfo order{};
+  ::ors::OrderInfo order{};
   order.localID = 42;
   order.requestType = ::ors::infra::CANCELORDER;
   order.Transaction_Type = 'B';
@@ -47,8 +47,8 @@ int main() {
   order.Price = 725.0;
   std::strcpy(order.exchID, "000000000001");
   std::strcpy(order.ScripCode, "au2612");
-  server.m_ordLocalMap[42] = order;
-  server.m_ordExchMap["000000000001"] = 42;
+  server.orderStore().local()[42] = order;
+  server.orderStore().exchange()["000000000001"] = 42;
 
   CThostFtdcOrderActionField action{};
   std::strcpy(action.OrderRef, "000000000001");
@@ -62,7 +62,7 @@ int main() {
   if (transport.responseCount() != 2 ||
       transport.responses()[1].Response_Type !=
           ::ors::infra::CANCEL_ORDER_REJECT ||
-      server.m_ordLocalMap.count(42) != 1) {
+      server.orderStore().local().count(42) != 1) {
     std::cerr << "cancel reject did not keep the original order\n";
     return 1;
   }
