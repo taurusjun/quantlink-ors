@@ -50,7 +50,10 @@ void ORSServer::OnRspUserLogin(CThostFtdcRspUserLoginField *pRspUserLogin,
   FRONT_ID = pRspUserLogin->FrontID;
   SESSION_ID = pRspUserLogin->SessionID;
 
-  while (m_pUserMDSpi != nullptr && m_pUserMDSpi->m_iLoginMD == 0) {
+  if (m_pUserMDSpi != nullptr &&
+      !m_pUserMDSpi->waitForLogin(std::chrono::seconds(3))) {
+    ORS_LOG(ERROR) << "MD login timeout; ORS startup aborted" << std::endl;
+    return;
   }
 
   ReqSettlementInfoConfirm();

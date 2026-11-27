@@ -1,5 +1,7 @@
 #pragma once
 
+#include <atomic>
+#include <condition_variable>
 #include <cstdint>
 #include <memory>
 #include <map>
@@ -114,7 +116,7 @@ public:
     OrderAccountMap m_ordLocalMap;
     OrderAccountMap2 m_ordExchMap;
     std::mutex m_ordExchMapLock;
-    volatile bool m_connected;
+    std::atomic_bool m_connected{false};
     bool m_logReqResp;
     std::thread m_reqrespLogger;
     int m_iRequestID;
@@ -215,6 +217,9 @@ private:
     ::ors::ClientRegistry clientRegistry_;
     ::ors::AccountQueryState accountQueryState_;
     std::thread accountQueryTimer_;
+    std::atomic_bool stopRequested_{false};
+    std::mutex readyMutex_;
+    std::condition_variable readyCv_;
     bool clientRegistered_{false};
     bool rmsReady_{false};
     std::vector<::ors::PositionRow> pendingPositionRows_;

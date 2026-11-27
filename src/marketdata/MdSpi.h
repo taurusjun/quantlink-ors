@@ -1,9 +1,17 @@
 #pragma once
 
+#include <atomic>
+#include <chrono>
+#include <condition_variable>
 #include <cstdint>
+#include <mutex>
 
 
+#include <atomic>
+#include <chrono>
+#include <condition_variable>
 #include <cstdint>
+#include <mutex>
 
 #include "ThostFtdcMdApi.h"
 
@@ -32,13 +40,17 @@ public:
     // virtual void OnRspQryInstrument(CThostFtdcInstrumentField *pInstrument, CThostFtdcRspInfoField *pRspInfo, int nRequestID, bool bIsLast);
     void ReqUserLogin(TThostFtdcBrokerIDType BROKER_ID, TThostFtdcInvestorIDType INVESTOR_ID, TThostFtdcPasswordType PASSWORD);
     void SubscribeMarketData();
-    int m_iLoginMD{0};
+    std::atomic<int> m_iLoginMD{0};
+    bool waitForLogin(std::chrono::milliseconds timeout);
+    void markLogin(int value);
 
 private:
     // void ReqUserLogin();
     bool IsErrorRspInfo(CThostFtdcRspInfoField *pRspInfo);
     std::uint64_t tempTimeStamp{0};
     int requestId_{0};
+    std::mutex loginMutex_;
+    std::condition_variable loginCv_;
     CThostFtdcMdApi *m_pUserApi;
     ORSServer& server_;
     MDHandler& mdHandler_;

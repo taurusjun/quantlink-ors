@@ -17,6 +17,22 @@ extern char ppInstrumentID[200][30];
 extern int iInstrumentID;
 
 struct tm tepoch = {0};
+
+bool CMdSpi::waitForLogin(std::chrono::milliseconds timeout) {
+    std::unique_lock<std::mutex> lock(loginMutex_);
+    return loginCv_.wait_for(lock, timeout,
+                             [this] { return m_iLoginMD.load() != 0; }) &&
+           m_iLoginMD.load() != 0;
+}
+
+void CMdSpi::markLogin(int value) {
+    {
+        std::lock_guard<std::mutex> lock(loginMutex_);
+        m_iLoginMD.store(value);
+    }
+    loginCv_.notify_all();
+}
+
 void CMdSpi::OnRspError(CThostFtdcRspInfoField *pRspInfo, int nRequestID, bool bIsLast)
 {
     tempTimeStamp = ::ors::nowNanos();
@@ -55,7 +71,11 @@ void CMdSpi::ReqUserLogin(TThostFtdcBrokerIDType BROKER_ID, TThostFtdcInvestorID
     strcpy(req.UserID, BROKER_ID);
     strcpy(req.Password, PASSWORD);
     int iResult = m_pUserApi->ReqUserLogin(&req, ++requestId_);
-    m_iLoginMD = !iResult;
+    {
+        std::lock_guard<std::mutex> lock(loginMutex_);
+        m_iLoginMD.store(!iResult);
+    }
+    loginCv_.notify_all();
     tempTimeStamp = ::ors::nowNanos();
     ORS_LOG(INFO) << "|" << tempTimeStamp << "|"
                << "ReqUserLogin CMdSpi " << ((iResult == 0) ? "done " : "not done ") << endl;
@@ -64,7 +84,7 @@ void CMdSpi::ReqUserLogin(TThostFtdcBrokerIDType BROKER_ID, TThostFtdcInvestorID
         tempTimeStamp = ::ors::nowNanos();
         ORS_LOG(INFO) << "|" << tempTimeStamp << "|"
                    << "iResult " << iResult << std::endl;
-        exit(1);
+        return;
     }
 }
 

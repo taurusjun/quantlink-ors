@@ -115,12 +115,18 @@ ORSServer::~ORSServer()
 
 void ORSServer::Start()
 {
-    while (!m_connected)
     {
+        std::unique_lock<std::mutex> lock(readyMutex_);
+        readyCv_.wait(lock, [this] {
+            return m_connected.load() || stopRequested_.load();
+        });
+    }
+    if (stopRequested_.load() || !m_connected.load()) {
+        return;
     }
 
     accountQueryTimer_ = std::thread([this] {
-        while (m_connected) {
+        while (!stopRequested_.load() && m_connected.load()) {
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
             const auto expired = accountQueryState_.expire(
                 std::chrono::steady_clock::now());
@@ -143,15 +149,19 @@ void ORSServer::Start()
 
 void ORSServer::Stop()
 {
-    // accounts->Stop();
-    m_connected = false;
+    if (stopRequested_.exchange(true)) {
+        return;
+    }
+    const bool wasConnected = m_connected.exchange(false);
+    readyCv_.notify_all();
     if (accountQueryTimer_.joinable()) {
         accountQueryTimer_.join();
     }
-    ORS_LOG(INFO) << "Logging off\n";
-    DoLoggOff();
+    if (wasConnected) {
+        ORS_LOG(INFO) << "Logging off\n";
+        DoLoggOff();
+    }
     ORS_LOG(INFO) << "Exiting\n";
-    exit(0);
 }
 
 void ORSServer::RegisterClient(const ::ors::ClientRegisterRequest& request)
@@ -958,9 +968,9 @@ void ORSServer::ReqQryInstrument(char *szInstrumentID)
                    << "Instrument info query successful" << std::endl;
     else
     {
-        ORS_LOG(INFO) << "--->>> " << tempTimeStamp << "|"
-                   << "Instrument info query failed... exiting..." << std::endl;
-        exit(1);
+        ORS_LOG(ERROR) << "--->>> " << tempTimeStamp << "|"
+                   << "Instrument info query failed" << std::endl;
+        return;
     }
 }
 
@@ -1069,7 +1079,8 @@ void ORSServer::OnRspQryInvestorPosition(
     if (bIsLast) {
         positionTable_.replaceFromQuery(std::move(pendingPositionRows_));
         pendingPositionRows_.clear();
-        m_connected = true;
+        m_connected.store(true);
+        readyCv_.notify_all();
         ORS_LOG(INFO) << "Position query complete; ORS ready" << std::endl;
         ReqQryOrder();
     }
@@ -1191,9 +1202,9 @@ void ORSServer::ReqUserLogin()
     else
     {
         tempTimeStamp = ::ors::nowNanos();
-        ORS_LOG(INFO) << "|" << tempTimeStamp << "|"
+        ORS_LOG(ERROR) << "|" << tempTimeStamp << "|"
                    << "Login send failure" << std::endl;
-        exit(0);
+        return;
     }
     // ReqUserLogin(req.BrokerID, req.UserID, req.Password);
 }
@@ -1920,7 +1931,7 @@ void ORSServer::HandleSignals()
 {
 
     int32_t sig = 0;
-    while (true)
+    while (!stopRequested_.load())
     {
         ORS_LOG(INFO) << "Signal handler thread sleeping\n";
         if (sigwait(&m_signalSet, &sig) != 0)
