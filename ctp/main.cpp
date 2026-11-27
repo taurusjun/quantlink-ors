@@ -6,6 +6,8 @@
 
 #include "core/MDHandler.h"
 #include "core/ORSServer.h"
+#include "log/Log.h"
+#include "ors/base/Log.h"
 #include "marketupdateNew.h"
 #include "transport/AeronClient.h"
 #include "transport/AeronOrsTransport.h"
@@ -24,6 +26,7 @@ int main(int argc, char** argv) {
 
   try {
     const ::ors::OrsConfig config = ::ors::OrsConfig::load(configPath);
+    ::ors::log::init(::ors::base::createLogger("ors", config.logPath));
     ::ors::AeronClient aeron(config);
     ::ors::AeronOrsTransport transport(config, aeron, aeron);
     ORSServer server(config, transport);

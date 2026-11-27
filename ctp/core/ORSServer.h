@@ -156,6 +156,7 @@ public:
 
     virtual void OnRspQryInstrument(CThostFtdcInstrumentField *pInstrument, CThostFtdcRspInfoField *pRspInfo, int nRequestID, bool bIsLast);
     virtual void OnRspQryInvestorPosition(CThostFtdcInvestorPositionField *pPosition, CThostFtdcRspInfoField *pRspInfo, int nRequestID, bool bIsLast);
+    virtual void OnRspQryOrder(CThostFtdcOrderField *pOrder, CThostFtdcRspInfoField *pRspInfo, int nRequestID, bool bIsLast);
     virtual void OnRspQryTradingAccount(CThostFtdcTradingAccountField *pAccount, CThostFtdcRspInfoField *pRspInfo, int nRequestID, bool bIsLast);
     virtual void OnRspSettlementInfoConfirm(CThostFtdcSettlementInfoConfirmField *pSettlementInfoConfirm, CThostFtdcRspInfoField *pRspInfo, int nRequestID, bool bIsLast);
     virtual void OnRtnOrder(CThostFtdcOrderField *pOrder);
@@ -188,6 +189,7 @@ private:
     void ReqQrySettlementInfo();
     void ReqQryInstrument(char *);
     void ReqQryPosition();
+    void ReqQryOrder();
     void ReqQryAccount();
     void installSignals();
     void HandleSignals();
@@ -207,6 +209,8 @@ private:
     bool clientRegistered_{false};
     bool rmsReady_{false};
     std::vector<::ors::PositionRow> pendingPositionRows_;
+    std::vector<CThostFtdcOrderField> pendingStartupOrders_;
+    bool startupOrderQueryIssued_{false};
 
     std::string m_rmsConfigFile;
     std::string m_rmsFirmwideConfigFile;

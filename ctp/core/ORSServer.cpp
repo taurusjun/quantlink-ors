@@ -10,6 +10,7 @@
 #include "sstream"
 #include "rmsimpl.hpp"
 #include "query/QueryMapping.h"
+#include "control/OpenOrderGuard.h"
 
 using namespace std;
 using namespace ors::infra;
@@ -1074,7 +1075,78 @@ void ORSServer::OnRspQryInvestorPosition(
         pendingPositionRows_.clear();
         m_connected = true;
         ORS_LOG(INFO) << "Position query complete; ORS ready" << std::endl;
+        ReqQryOrder();
     }
+}
+
+void ORSServer::ReqQryOrder()
+{
+    if (startupOrderQueryIssued_) {
+        return;
+    }
+    startupOrderQueryIssued_ = true;
+    CThostFtdcQryOrderField request;
+    memset(&request, 0, sizeof(request));
+    strcpy(request.BrokerID, m_BROKER_ID.c_str());
+    strcpy(request.InvestorID, m_INVESTOR_ID.c_str());
+    const int result = m_pUserTradeApi->ReqQryOrder(&request, ++m_iRequestID);
+    if (result != 0) {
+        ::ors::log::error("ors.startup.order_query_failed",
+                          {{"severity", "P1"},
+                           {"message", "CTP order query rejected"},
+                           {"return_code", result}});
+        std::cerr << "ORS_ALERT startup_order_query_failed return=" << result << '\n';
+    }
+}
+
+void ORSServer::OnRspQryOrder(CThostFtdcOrderField *pOrder,
+                              CThostFtdcRspInfoField *pRspInfo,
+                              int, bool bIsLast)
+{
+    if (pRspInfo != nullptr && pRspInfo->ErrorID != 0) {
+        pendingStartupOrders_.clear();
+        ::ors::log::error("ors.startup.order_query_failed",
+                          {{"severity", "P1"},
+                           {"message", pRspInfo->ErrorMsg},
+                           {"return_code", pRspInfo->ErrorID}});
+        std::cerr << "ORS_ALERT startup_order_query_failed code="
+                  << pRspInfo->ErrorID << '\n';
+        return;
+    }
+    if (pOrder != nullptr) {
+        pendingStartupOrders_.push_back(*pOrder);
+    }
+    if (!bIsLast) {
+        return;
+    }
+
+    if (::ors::hasLiveOrders(pendingStartupOrders_)) {
+        std::string refs;
+        for (const auto &order : pendingStartupOrders_) {
+            if (order.OrderStatus == THOST_FTDC_OST_AllTraded ||
+                order.OrderStatus == THOST_FTDC_OST_Canceled) {
+                continue;
+            }
+            if (!refs.empty()) {
+                refs += ',';
+            }
+            refs += order.OrderRef;
+            if (refs.size() >= 512) {
+                break;
+            }
+        }
+        ::ors::log::error("ors.startup.live_orders",
+                          {{"severity", "P1"},
+                           {"message", "CTP has live orders at startup"},
+                           {"count", static_cast<int>(pendingStartupOrders_.size())},
+                           {"order_refs", refs}});
+        std::cerr << "ORS_ALERT startup_live_orders count="
+                  << pendingStartupOrders_.size() << " refs=" << refs << '\n';
+    } else {
+        ::ors::log::info("ors.startup.orders_flat",
+                         {{"message", "no live CTP orders at startup"}});
+    }
+    pendingStartupOrders_.clear();
 }
 
 void ORSServer::ReqSettlementInfoConfirm()
