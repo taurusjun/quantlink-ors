@@ -70,11 +70,15 @@ int main() {
   std::strcpy(report.OrderSysID, "EX-42");
   report.FrontID = 1;
   report.SessionID = 2;
-  report.OrderSubmitStatus = THOST_FTDC_OSS_Accepted;
-  report.OrderStatus = THOST_FTDC_OST_NoTradeQueueing;
+  report.OrderSubmitStatus = THOST_FTDC_OSS_InsertSubmitted;
+  report.OrderStatus = THOST_FTDC_OST_Unknown;
   report.VolumeTotalOriginal = 2;
   report.VolumeTraded = 0;
   report.LimitPrice = 778.5;
+  server.OnRtnOrder(&report);
+
+  report.OrderSubmitStatus = THOST_FTDC_OSS_Accepted;
+  report.OrderStatus = THOST_FTDC_OST_NoTradeQueueing;
   server.OnRtnOrder(&report);
 
   report.OrderStatus = THOST_FTDC_OST_PartTradedQueueing;
@@ -108,11 +112,14 @@ int main() {
   }
   std::remove(path.c_str());
 
-  if (count(all, "\"event\":\"ors.order.status\"") != 3) {
+  if (count(all, "\"event\":\"ors.order.status\"") != 4) {
     std::cerr << "expected 3 status events:\n" << all;
     return 1;
   }
-  if (count(all, "\"status\":\"accepted\"") == 0 ||
+  if (all.find("\"status\":\"waiting\"") == std::string::npos ||
+      all.find("order submitted; waiting for exchange status") ==
+          std::string::npos ||
+      count(all, "\"status\":\"accepted\"") == 0 ||
       count(all, "\"status\":\"partially_filled\"") == 0 ||
       count(all, "\"status\":\"filled\"") == 0) {
     std::cerr << "missing normalized status:\n" << all;

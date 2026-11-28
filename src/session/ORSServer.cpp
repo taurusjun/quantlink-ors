@@ -68,6 +68,8 @@ std::string normalizedOrderStatus(char status) {
         return "accepted";
     case THOST_FTDC_OST_Canceled:
         return "canceled";
+    case THOST_FTDC_OST_Unknown:
+        return "waiting";
     default:
         return "unknown";
     }
@@ -1300,7 +1302,11 @@ void ORSServer::OnRtnOrder(CThostFtdcOrderField *pOrder)
             ctpStatus == THOST_FTDC_OST_Canceled
                 ? 0
                 : (total > filled ? total - filled : 0);
-        logOrderEvent("ors.order.status", "CTP order status changed", ordinfo,
+        const char* statusMessage =
+            status == "waiting"
+                ? "order submitted; waiting for exchange status"
+                : "CTP order status changed";
+        logOrderEvent("ors.order.status", statusMessage, ordinfo,
                       status.c_str(),
                       status == "unknown" ? OrderLogLevel::Warn
                                           : OrderLogLevel::Info,
