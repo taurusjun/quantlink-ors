@@ -1296,7 +1296,10 @@ void ORSServer::OnRtnOrder(CThostFtdcOrderField *pOrder)
             static_cast<std::uint64_t>(std::max(0, pOrder->VolumeTraded));
         const std::uint64_t total =
             static_cast<std::uint64_t>(std::max(0, pOrder->VolumeTotalOriginal));
-        const std::uint64_t remaining = total > filled ? total - filled : 0;
+        const std::uint64_t remaining =
+            ctpStatus == THOST_FTDC_OST_Canceled
+                ? 0
+                : (total > filled ? total - filled : 0);
         logOrderEvent("ors.order.status", "CTP order status changed", ordinfo,
                       status.c_str(),
                       status == "unknown" ? OrderLogLevel::Warn
