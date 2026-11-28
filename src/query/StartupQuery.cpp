@@ -7,6 +7,19 @@
 #include "infra/LogFacade.h"
 
 namespace ors {
+namespace {
+
+const char* positionDateName(char date) {
+  if (date == THOST_FTDC_PSD_History) {
+    return "history";
+  }
+  if (date == THOST_FTDC_PSD_Today) {
+    return "today";
+  }
+  return "unknown";
+}
+
+}  // namespace
 
 StartupQuery::StartupQuery(PositionTable& positions, OrsConfig config,
                            PositionRequest positionRequest,
@@ -55,11 +68,28 @@ void StartupQuery::onPosition(CThostFtdcInvestorPositionField* position,
     return;
   }
   if (position != nullptr) {
+    const bool shortSide = position->PosiDirection == THOST_FTDC_PD_Short;
+    const std::string hedgeFlag =
+        position->HedgeFlag == '\0' ? std::string{}
+                                    : std::string(1, position->HedgeFlag);
+    log::info("ors.startup.position_row",
+              {{"type", "position"},
+               {"account_id", config_.accountId},
+               {"instrument", position->InstrumentID},
+               {"side", shortSide ? "short" : "long"},
+               {"position_date", positionDateName(position->PositionDate)},
+               {"position_date_code", std::string(1, position->PositionDate)},
+               {"position", position->Position},
+               {"today_position", position->TodayPosition},
+               {"yd_position", position->YdPosition},
+               {"hedge_flag", hedgeFlag},
+               {"exchange", position->ExchangeID},
+               {"trading_day", position->TradingDay},
+               {"message", "CTP position row"}});
+
     PositionRow row;
     row.instrumentId = position->InstrumentID;
-    row.side = position->PosiDirection == THOST_FTDC_PD_Short
-                   ? PositionSide::Short
-                   : PositionSide::Long;
+    row.side = shortSide ? PositionSide::Short : PositionSide::Long;
     row.position = position->Position;
     row.todayPosition = position->TodayPosition;
     pendingPositions_.push_back(std::move(row));
@@ -68,11 +98,13 @@ void StartupQuery::onPosition(CThostFtdcInvestorPositionField* position,
     return;
   }
 
+  const int rows = static_cast<int>(pendingPositions_.size());
   positions_.replaceFromQuery(std::move(pendingPositions_));
   pendingPositions_.clear();
   log::info("ors.startup.position_ready",
             {{"type", "system"},
              {"account_id", config_.accountId},
+             {"rows", rows},
              {"message", "position snapshot ready"}});
   requestOrders();
 }

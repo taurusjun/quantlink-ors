@@ -43,7 +43,19 @@ std::unique_ptr<::ors::StartupQuery> makeQuery(Scenario& scenario,
 }
 
 void runPositionPhase(::ors::StartupQuery& query) {
+  CThostFtdcInvestorPositionField position{};
+  std::strcpy(position.InstrumentID, "au2612");
+  position.PosiDirection = THOST_FTDC_PD_Long;
+  position.PositionDate = THOST_FTDC_PSD_History;
+  position.Position = 5;
+  position.TodayPosition = 0;
+  position.YdPosition = 5;
+  position.HedgeFlag = THOST_FTDC_HF_Speculation;
+  std::strcpy(position.ExchangeID, "SHFE");
+  std::strcpy(position.TradingDay, "20261128");
+
   query.requestPosition();
+  query.onPosition(&position, nullptr, false);
   query.onPosition(nullptr, nullptr, true);
 }
 
@@ -65,6 +77,13 @@ int main() {
   auto flatQuery = makeQuery(flat);
   runPositionPhase(*flatQuery);
   flatQuery->onOrders(nullptr, nullptr, true);
+
+  const auto flatPosition = flat.positions.get("au2612");
+  if (flatPosition.onLongPos != 5 || flatPosition.todayLongPos != 0) {
+    std::cerr << "flat position table: on=" << flatPosition.onLongPos
+              << " today=" << flatPosition.todayLongPos << '\n';
+    return 1;
+  }
 
   Scenario live;
   auto liveQuery = makeQuery(live);
@@ -109,6 +128,20 @@ int main() {
   if (failed.readyCalls != 0 || failed.blockedCalls != 1) {
     std::cerr << "failed callbacks: ready=" << failed.readyCalls
               << " blocked=" << failed.blockedCalls << '\n';
+    return 1;
+  }
+  if (all.find("ors.startup.position_row") == std::string::npos ||
+      all.find("\"instrument\":\"au2612\"") == std::string::npos ||
+      all.find("\"side\":\"long\"") == std::string::npos ||
+      all.find("\"position_date\":\"history\"") == std::string::npos ||
+      all.find("\"position_date_code\":\"2\"") == std::string::npos ||
+      all.find("\"position\":5") == std::string::npos ||
+      all.find("\"today_position\":0") == std::string::npos ||
+      all.find("\"yd_position\":5") == std::string::npos ||
+      all.find("\"hedge_flag\":\"1\"") == std::string::npos ||
+      all.find("\"exchange\":\"SHFE\"") == std::string::npos ||
+      all.find("\"trading_day\":\"20261128\"") == std::string::npos) {
+    std::cerr << "missing startup position data log:\n" << all;
     return 1;
   }
   if (all.find("ors.startup.live_orders") == std::string::npos ||

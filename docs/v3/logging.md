@@ -132,6 +132,8 @@ openQty        -> remaining_qty
 | 未知/重复/旧 front | `report.drop` | WARN | order_ref/ctp_ref/front/session/reason/drop_reason |
 | 账户查询 | `query.account` | INFO | request_id/elapsed/rows/error |
 | 持仓查询 | `query.position` | INFO | request_id/elapsed/rows/error |
+| 启动持仓逐行 | `ors.startup.position_row` | INFO | account/instrument/side/position_date/position_date_code/position/today_position/yd_position/hedge_flag/exchange/trading_day |
+| 启动持仓完成 | `ors.startup.position_ready` | INFO | account/rows |
 | 重连 | `reconnect.epoch` | INFO | old_epoch/new_epoch/front/session/elapsed |
 | MD 首次 tick | `md.first_tick` | INFO | instrument/exchange/last/volume/levels |
 | MD stale | `md.stale` | WARN | instrument/last_tick_age_ms |
