@@ -27,6 +27,7 @@ struct OrderInfo {
   int frontId;
   int sessionId;
   int strategyId{0};
+  int lastCtpOrderStatus{-1};
   char exchange;
   int qtyType;
 };

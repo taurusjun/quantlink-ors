@@ -1,5 +1,6 @@
 #include <errno.h>
 #include <string.h>
+#include <algorithm>
 #include <iostream>
 #include <utility>
 #include <assert.h>
@@ -27,6 +28,52 @@ using namespace ors::md;
 #define OPEN_ORDER 3
 #define CLOSE_TODAY 1
 #define CLOSE_YESTERDAY 2
+
+namespace {
+
+std::string ctpOrderStatusName(char status) {
+    switch (status) {
+    case THOST_FTDC_OST_AllTraded:
+        return "AllTraded";
+    case THOST_FTDC_OST_PartTradedQueueing:
+        return "PartTradedQueueing";
+    case THOST_FTDC_OST_PartTradedNotQueueing:
+        return "PartTradedNotQueueing";
+    case THOST_FTDC_OST_NoTradeQueueing:
+        return "NoTradeQueueing";
+    case THOST_FTDC_OST_NoTradeNotQueueing:
+        return "NoTradeNotQueueing";
+    case THOST_FTDC_OST_Canceled:
+        return "Canceled";
+    case THOST_FTDC_OST_Unknown:
+        return "Unknown";
+    case THOST_FTDC_OST_NotTouched:
+        return "NotTouched";
+    case THOST_FTDC_OST_Touched:
+        return "Touched";
+    default:
+        return "Unrecognized";
+    }
+}
+
+std::string normalizedOrderStatus(char status) {
+    switch (status) {
+    case THOST_FTDC_OST_AllTraded:
+        return "filled";
+    case THOST_FTDC_OST_PartTradedQueueing:
+    case THOST_FTDC_OST_PartTradedNotQueueing:
+        return "partially_filled";
+    case THOST_FTDC_OST_NoTradeQueueing:
+    case THOST_FTDC_OST_NoTradeNotQueueing:
+        return "accepted";
+    case THOST_FTDC_OST_Canceled:
+        return "canceled";
+    default:
+        return "unknown";
+    }
+}
+
+}  // namespace
 
 // int shmread ;
 int mdupdate;
@@ -1240,6 +1287,26 @@ void ORSServer::OnRtnOrder(CThostFtdcOrderField *pOrder)
 
     strcpy(ordinfo.OrderSysID, pOrder->OrderSysID);
 
+    const char ctpStatus = pOrder->OrderStatus;
+    if (static_cast<int>(ctpStatus) != ordinfo.lastCtpOrderStatus) {
+        const std::string rawStatus(1, ctpStatus);
+        const std::string rawStatusName = ctpOrderStatusName(ctpStatus);
+        const std::string status = normalizedOrderStatus(ctpStatus);
+        const std::uint64_t filled =
+            static_cast<std::uint64_t>(std::max(0, pOrder->VolumeTraded));
+        const std::uint64_t total =
+            static_cast<std::uint64_t>(std::max(0, pOrder->VolumeTotalOriginal));
+        const std::uint64_t remaining = total > filled ? total - filled : 0;
+        logOrderEvent("ors.order.status", "CTP order status changed", ordinfo,
+                      status.c_str(),
+                      status == "unknown" ? OrderLogLevel::Warn
+                                          : OrderLogLevel::Info,
+                      0, pOrder->LimitPrice, total, filled, remaining,
+                      nullptr, "ctp_order_report", rawStatus.c_str(),
+                      rawStatusName.c_str());
+        ordinfo.lastCtpOrderStatus = static_cast<int>(ctpStatus);
+    }
+
     switch (pOrder->OrderSubmitStatus)
     {
     case THOST_FTDC_OSS_InsertSubmitted:
@@ -1471,7 +1538,8 @@ void ORSServer::OnRtnTrade(CThostFtdcTradeField *pTrade)
                   OrderLogLevel::Info, 0, pTrade->Price,
                   static_cast<std::uint64_t>(pTrade->Volume),
                   static_cast<std::uint64_t>(pTrade->Volume),
-                  static_cast<std::uint64_t>(ordinfo.openQty));
+                  static_cast<std::uint64_t>(ordinfo.openQty), nullptr,
+                  "ctp_trade", nullptr, nullptr, pTrade->TradeID);
 
     // UpdateRMS(res, ordinfo.ScripCode, ordinfo.ClientID, ordinfo.Transaction_Type);
     if (!filled) {

@@ -71,7 +71,9 @@ void logOrderEvent(const char* event, const char* message,
                    OrderLogLevel level, std::int64_t errorCode, double price,
                    std::uint64_t quantity, std::uint64_t filledQuantity,
                    std::uint64_t remainingQuantity,
-                   const char* errorMessage) {
+                   const char* errorMessage, const char* source,
+                   const char* rawStatus, const char* rawStatusName,
+                   const char* exchangeTradeId) {
   const std::string errorCodeText =
       errorCode == 0 ? "" : std::to_string(errorCode);
   const auto fields = std::initializer_list<log::LogField>{
@@ -88,6 +90,10 @@ void logOrderEvent(const char* event, const char* message,
       {"side", sideName(static_cast<unsigned char>(order.Transaction_Type))},
       {"offset", offsetName(order.qtyType)},
       {"status", status == nullptr ? "" : status},
+      {"source", source == nullptr ? "" : source},
+      {"raw_status", rawStatus == nullptr ? "" : rawStatus},
+      {"raw_status_name", rawStatusName == nullptr ? "" : rawStatusName},
+      {"exchange_trade_id", exchangeTradeId == nullptr ? "" : exchangeTradeId},
       {"error_code", errorCodeText},
       {"error_message", errorMessage == nullptr ? "" : errorMessage},
       {"price", price},

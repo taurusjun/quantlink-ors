@@ -17,6 +17,10 @@ void logOrderEvent(const char* event, const char* message,
                    std::uint64_t quantity = 0,
                    std::uint64_t filledQuantity = 0,
                    std::uint64_t remainingQuantity = 0,
-                   const char* errorMessage = nullptr);
+                   const char* errorMessage = nullptr,
+                   const char* source = nullptr,
+                   const char* rawStatus = nullptr,
+                   const char* rawStatusName = nullptr,
+                   const char* exchangeTradeId = nullptr);
 
 }  // namespace ors
