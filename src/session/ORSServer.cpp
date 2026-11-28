@@ -1625,9 +1625,10 @@ void ORSServer::HandleSignals()
         }
         case SIGUSR2:
         {
-            log::info("ors.session.signal", {{"type", "session"},
-                      {"message", "fetch positions requested"}});
-            ReqQryPosition();
+            // Runtime position refresh can drop close reservations and race
+            // with in-flight fills; only the startup query may populate the table.
+            log::warn("ors.session.signal", {{"type", "session"},
+                      {"message", "position refresh disabled while running"}});
             break;
         }
 
